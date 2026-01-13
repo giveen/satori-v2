@@ -1,60 +1,5 @@
 # Satori
 
-## Usage
-Live and replay capture
------------------------
-
-You can run Satori in live or replay mode. Replay mode is deterministic and suitable
-for regression testing. Example usage:
-
-```bash
-# Replay a PCAP deterministically and write incremental host snapshots
-python -m satori.cli analyze tests/data/dhcp.pcap \
-	--pcap-file tests/data/dhcp.pcap --live-snapshot-dir /tmp/snapshots --live-metrics \
-	--live-ndjson --live-stdout --out /tmp/out.json
-```
-
-Phase 7 anomaly detection (CLI)
---------------------------------
-
-Run Phase 7 after Phase 2–6 processing and write anomalies to a file or stdout:
-
-```bash
-python -m satori.cli analyze tests/data/dhcp.pcap --pcap-file tests/data/dhcp.pcap \
-# Satori
-
-Intro
------
-
-Satori is a lightweight, deterministic passive OS fingerprinting prototype. It can
-replay PCAP/PCAPNG files deterministically for testing or capture live from an
-interface. Outputs are JSON-friendly and suitable for streaming to `jq`.
-
-Installation
-------------
-
-Create a Python virtual environment and install dependencies:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-Optional (Poetry):
-
-```bash
-poetry install
-```
-
-Usage
------
-
-Show CLI help:
-
-```bash
-# Satori
-
 ## Intro
 
 Satori is a lightweight, deterministic **passive OS fingerprinting** prototype.
@@ -107,10 +52,10 @@ Replay and stream per-host JSON:
 
 ```bash
 python -m satori.cli analyze tests/data/http.cap \
-	--use-nmap-db \
-	--nmap-db-path tests/data/nmap_test_db.json \
-	--live-stdout \
-	--live-ndjson
+  --use-nmap-db \
+  --nmap-db-path tests/data/nmap_test_db.json \
+  --live-stdout \
+  --live-ndjson
 ```
 
 Each host update is emitted as a single JSON object on stdout (NDJSON).
@@ -119,10 +64,10 @@ Replay and write incremental snapshots:
 
 ```bash
 python -m satori.cli analyze tests/data/dhcp.pcap \
-	--live-snapshot-dir /tmp/snapshots \
-	--live-metrics \
-	--live-ndjson \
-	--out /tmp/out.json
+  --live-snapshot-dir /tmp/snapshots \
+  --live-metrics \
+  --live-ndjson \
+  --out /tmp/out.json
 ```
 
 This writes:
@@ -139,10 +84,10 @@ True live capture with rolling JSON:
 
 ```bash
 python -m satori.cli analyze \
-	--live \
-	--interface eth0 \
-	--live-stdout \
-	--live-ndjson
+  --live \
+  --interface eth0 \
+  --live-stdout \
+  --live-ndjson
 ```
 
 Each line written to stdout is a complete JSON object representing a host
@@ -158,10 +103,10 @@ Pipe live output into `jq`:
 
 ```bash
 python -m satori.cli analyze \
-	--live \
-	--interface eth0 \
-	--live-stdout \
-	--live-ndjson \
+  --live \
+  --interface eth0 \
+  --live-stdout \
+  --live-ndjson \
 | jq -c '{host_id, ips, flows, os_candidates}'
 ```
 
@@ -191,6 +136,3 @@ Internal processing metadata is intentionally excluded from the live output.
 
 ---
 
-If you want help with examples, testing PCAPs, or using the Nmap OS DB for
-enrichment, open an issue or ask in the repository and I'll add targeted
-examples.
