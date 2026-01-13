@@ -64,3 +64,7 @@ tests/**/.pytest_cache/
 
 # Ignore docs directory (documentation source)
 docs/
+
+# Ignore expected test outputs under tests/
+tests/expected*
+tests/**/expected*

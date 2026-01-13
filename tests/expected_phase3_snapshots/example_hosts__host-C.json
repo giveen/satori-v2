@@ -1,1 +1,0 @@
-{"aggregated_os_inference":{"aggregated_os_inference_schema_version":"phase3/os_inference/v1","aggregation_id":"mac:ddeeff667788","ambiguity_flags":{"likely_shared_device":false,"multi_host_conflict":false},"candidates":[],"generated_by":"phase3-v0.1","members":["host-C"],"metadata":{"evidence_count":1,"protocol_count":1,"protocols_seen":["tcp"]}},"correlation_notes":[]}
