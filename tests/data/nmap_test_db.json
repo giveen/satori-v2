@@ -1,0 +1,26 @@
+[
+  {
+    "name": "Linux 4.x",
+    "signature": {
+      "tcp_options": ["mss:1460","timestamp","wscale:7"],
+      "ttl": 64,
+      "window": 64240
+    }
+  },
+  {
+    "name": "Android 9",
+    "signature": {
+      "tcp_options": ["mss:1460","sackOK","wscale:8"],
+      "ttl": [60, 66],
+      "window": 65535
+    }
+  },
+  {
+    "name": "Windows 10",
+    "signature": {
+      "tcp_options": ["mss:1460","sackOK","timestamp"],
+      "ttl": 128,
+      "window": 8192
+    }
+  }
+]

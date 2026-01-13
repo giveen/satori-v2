@@ -1,0 +1,35 @@
+{
+  "version": "sigs/v1",
+  "protocol_weights": {
+    "tcp": 1.0,
+    "ssh": 1.2,
+    "dhcp": 1.1,
+    "dns": 0.6,
+    "ntp": 0.5
+  },
+  "baseline_threshold": 0.1,
+  "ambiguity_penalties": {
+    "nat_suspected": 0.25,
+    "shared_ip": 0.5
+  },
+  "traits": {
+    "tcp:ttl:64": {
+      "matches": {
+        "Ubuntu": 0.7,
+        "Debian": 0.6
+      }
+    },
+    "ssh:kex:curve25519": {
+      "matches": {
+        "Ubuntu": 0.8,
+        "Arch Linux": 0.7
+      }
+    },
+    "dhcp:prl:0103062a": {
+      "matches": {
+        "Ubuntu": 0.5,
+        "Windows": 0.3
+      }
+    }
+  }
+}

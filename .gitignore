@@ -1,0 +1,56 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.so
+*.pyd
+*.egg-info/
+*.egg
+*.pyc
+
+# Virtual environment
+.venv/
+env/
+venv/
+
+# Bytecode and caches
+*.pyc
+*.pyo
+*.pyd
+*.cache/
+*.mypy_cache/
+*.pytest_cache/
+*.tox/
+.coverage
+.coverage.*
+.cache/
+htmlcov/
+*.log
+
+# Runtime output directories
+satori-output/
+_archive/
+
+# Temporary developer snapshots & scratch output
+tests/tmp_phase7_out*/
+tests/tmp_snap_out*/
+tests/output/
+
+# Editor/IDE artifacts
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+desktop.ini
+*.bak
+
+# Nmap DB cache (optional, regenerated automatically)
+~/.cache/satori/nmap-os-db
+
+# Logs
+*.log

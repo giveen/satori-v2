@@ -1,0 +1,265 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    name: CI
+    jobs:
+      test:
+        runs-on: ubuntu-latest
+        strategy:
+          matrix:
+            python-version: [3.10, 3.11, 3.12]
+
+        steps:
+          - name: Checkout
+            uses: actions/checkout@v4
+
+          - name: Set up Python
+            uses: actions/setup-python@v4
+            with:
+              python-version: ${{ matrix.python-version }}
+
+          - name: Install dependencies
+            run: |
+              python -m pip install --upgrade pip
+              pip install -r requirements.txt
+              pip install pytest pytest-cov flake8
+
+          - name: Verify Phase3 snapshots exist
+            run: |
+              python - <<'PY'
+              from pathlib import Path
+              import json, sys
+
+              fixtures = Path('tests/data/phase1_fixtures')
+              snapdir = Path('tests/expected_phase3_snapshots')
+              missing = []
+
+              if not fixtures.exists():
+                  print(f'No fixtures directory: {fixtures}'); sys.exit(1)
+
+              for p in sorted(fixtures.glob('*.json')):
+                  data = json.load(p.open('r', encoding='utf-8'))
+                  if isinstance(data, list):
+                      hosts = data
+                  elif isinstance(data, dict) and 'hosts' in data and isinstance(data['hosts'], list):
+                      hosts = data['hosts']
+                  elif isinstance(data, dict):
+                      hosts = [v for v in data.values() if isinstance(v, dict)]
+                  else:
+                      hosts = []
+
+                  for idx, h in enumerate(hosts):
+                      hid = h.get('host_id') or h.get('id')
+                      if not hid:
+                          missing.append(f"Missing host id in fixture {p} host index {idx}")
+                          continue
+                      fname = f"{p.stem}__{hid}.json"
+                      if not (snapdir / fname).exists():
+                          missing.append(str(snapdir / fname))
+
+              if missing:
+                  print('Missing Phase3 snapshots:')
+                  for m in missing:
+                      print(' -', m)
+                  sys.exit(1)
+              print('All Phase3 snapshots present.')
+              PY
+
+          - name: Verify Phase4 snapshots exist
+            run: |
+              python - <<'PY'
+              from pathlib import Path
+              import json, sys
+
+              fixtures = Path('tests/data/phase1_fixtures')
+              snapdir = Path('tests/expected_phase4_snapshots')
+              missing = []
+
+              if not fixtures.exists():
+                print(f'No fixtures directory: {fixtures}'); sys.exit(1)
+
+              for p in sorted(fixtures.glob('*.json')):
+                data = json.load(p.open('r', encoding='utf-8'))
+                if isinstance(data, list):
+                  hosts = data
+                elif isinstance(data, dict) and 'hosts' in data and isinstance(data['hosts'], list):
+                  hosts = data['hosts']
+                elif isinstance(data, dict):
+                  hosts = [v for v in data.values() if isinstance(v, dict)]
+                else:
+                  hosts = []
+
+                for idx, h in enumerate(hosts):
+                  hid = h.get('host_id') or h.get('id')
+                  if not hid:
+                    missing.append(f"Missing host id in fixture {p} host index {idx}")
+                    continue
+                  fname = f"{p.stem}__{hid}.json"
+                  if not (snapdir / fname).exists():
+                    missing.append(str(snapdir / fname))
+
+              if missing:
+                print('Missing Phase4 snapshots:')
+                for m in missing:
+                  print(' -', m)
+                sys.exit(1)
+              print('All Phase4 snapshots present.')
+              PY
+
+          - name: Verify Phase5 snapshots exist
+            run: |
+              python - <<'PY'
+              from pathlib import Path
+              import json, sys
+
+              fixtures = Path('tests/data/phase1_fixtures')
+              snapdir = Path('tests/expected_phase5_snapshots')
+              missing = []
+
+              if not fixtures.exists():
+                print(f'No fixtures directory: {fixtures}'); sys.exit(1)
+
+              for p in sorted(fixtures.glob('*.json')):
+                data = json.load(p.open('r', encoding='utf-8'))
+                if isinstance(data, list):
+                  hosts = data
+                elif isinstance(data, dict) and 'hosts' in data and isinstance(data['hosts'], list):
+                  hosts = data['hosts']
+                elif isinstance(data, dict):
+                  hosts = [v for v in data.values() if isinstance(v, dict)]
+                else:
+                  hosts = []
+
+                for idx, h in enumerate(hosts):
+                  hid = h.get('host_id') or h.get('id')
+                  if not hid:
+                    missing.append(f"Missing host id in fixture {p} host index {idx}")
+                    continue
+                  # per-host snapshot and metrics snapshot
+                  fname = f"{p.stem}__{hid}.json"
+                  mname = f"{p.stem}__metrics.json"
+                  if not (snapdir / fname).exists():
+                    missing.append(str(snapdir / fname))
+                  if not (snapdir / mname).exists():
+                    missing.append(str(snapdir / mname))
+
+              if missing:
+                print('Missing Phase5 snapshots:')
+                for m in missing:
+                  print(' -', m)
+                sys.exit(1)
+              print('All Phase5 snapshots present.')
+              PY
+
+          - name: Verify live/replay snapshots exist
+            run: |
+              python - <<'PY'
+              from pathlib import Path
+              import sys
+
+              fixtures = list(Path('tests/data').glob('*.pcap*'))
+              snapdir = Path('tests/expected_live_snapshots')
+              missing = []
+              stdout_dir = Path('tests/expected_live_stdout')
+
+              if not fixtures:
+                  print('No pcap fixtures found under tests/data'); sys.exit(1)
+
+              for p in sorted(fixtures):
+                  # expect per-host and metrics snapshots
+                  # Without parsing the pcap we conservatively require metrics snapshot
+                  mname = f"{p.stem}__metrics.json"
+                  if not (snapdir / mname).exists():
+                      missing.append(str(snapdir / mname))
+                # Also expect a captured stdout snapshot (either .json or .txt)
+                s_json = stdout_dir / f"{p.stem}__stdout.json"
+                s_txt = stdout_dir / f"{p.stem}__stdout.txt"
+                if not s_json.exists() and not s_txt.exists():
+                  missing.append(str(stdout_dir / f"{p.stem}__stdout.json or .txt"))
+
+              if missing:
+                  print('Missing live/replay snapshots:')
+                  for m in missing:
+                      print(' -', m)
+                  sys.exit(1)
+              print('All live/replay snapshots present.')
+              PY
+
+              - name: Verify Phase7 snapshots exist
+              run: |
+                python - <<'PY'
+                from pathlib import Path
+                import sys
+
+                fixtures = list(Path('tests/data').glob('*.pcap*'))
+                snapdir = Path('tests/expected_phase7_snapshots')
+                missing = []
+
+                if not fixtures:
+                  print('No pcap fixtures found under tests/data'); sys.exit(1)
+
+                for p in sorted(fixtures):
+                  a_name = f"{p.stem}__anomalies.json"
+                  m_name = f"{p.stem}__anomalies_metrics.json"
+                  if not (snapdir / a_name).exists():
+                    missing.append(str(snapdir / a_name))
+                  if not (snapdir / m_name).exists():
+                    missing.append(str(snapdir / m_name))
+
+                if missing:
+                  print('Missing Phase7 snapshots:')
+                  for m in missing:
+                    print(' -', m)
+                  sys.exit(1)
+                print('All Phase7 snapshots present.')
+                PY
+
+          - name: Verify Phase9 snapshots exist
+            run: |
+              python - <<'PY'
+              from pathlib import Path
+              import sys
+
+              fixtures = list(Path('tests/data').glob('*.pcap*'))
+              snapdir = Path('tests/expected_phase9_snapshots')
+              missing = []
+
+              if not fixtures:
+                print('No pcap fixtures found under tests/data'); sys.exit(1)
+
+              for p in sorted(fixtures):
+                # expect bundle snapshot per pcap
+                a_name = f"{p.stem}__alerts_bundle.json"
+                if not (snapdir / a_name).exists():
+                  missing.append(str(snapdir / a_name))
+
+              if missing:
+                print('Missing Phase9 snapshots:')
+                for m in missing:
+                  print(' -', m)
+                sys.exit(1)
+              print('All Phase9 snapshots present.')
+              PY
+
+          - name: Run tests with coverage
+            run: |
+              pytest --cov=src --cov-report=xml:coverage.xml --cov-report=html:coverage_html tests/ -q
+
+          - name: Upload coverage artifacts
+            if: always()
+            uses: actions/upload-artifact@v4
+            with:
+              name: coverage-artifacts
+              path: |
+                coverage.xml
+                coverage_html
+
+          - name: Upload coverage to Codecov (optional)
+            if: secrets.CODECOV_TOKEN != ''
+            uses: codecov/codecov-action@v4
+            with:
+              file: coverage.xml
+              token: ${{ secrets.CODECOV_TOKEN }}

@@ -1,0 +1,48 @@
+[
+  {
+    "host_id": "host-A",
+    "capture_id": "pcap-A",
+    "ips": ["10.0.0.2"],
+    "mac": "AA:BB:CC:00:11:22",
+    "tcp_fingerprint": {"ttl": {"inferred_initial": 64}, "confidence": 0.9},
+    "ssh_fingerprint": {"kex_algorithms": ["curve25519-sha256@libssh.org"], "confidence": 0.8},
+    "evidence": [
+      {"source": "tcp_extractor", "attribute": "tcp.ttl", "value": 64, "confidence_hint": 0.9, "protocol": "tcp", "flow_id": "f1", "timestamp": 1609459200},
+      {"source": "ssh_extractor", "attribute": "ssh.kex_algorithms", "value": ["curve25519-sha256@libssh.org"], "confidence_hint": 0.8, "protocol": "ssh", "flow_id": "f2", "timestamp": 1609459201}
+    ],
+    "protocols_seen": ["tcp", "ssh"],
+    "protocol_count": 2,
+    "evidence_density": 0.5,
+    "ambiguity": {}
+  },
+  {
+    "host_id": "host-B",
+    "capture_id": "pcap-B",
+    "ips": ["10.0.0.3"],
+    "mac": "AA:BB:CC:00:11:22",
+    "tcp_fingerprint": {"ttl": {"inferred_initial": 128}, "confidence": 0.7},
+    "ssh_fingerprint": {"confidence": 0.0},
+    "evidence": [
+      {"source": "tcp_extractor", "attribute": "tcp.ttl", "value": 128, "confidence_hint": 0.7, "protocol": "tcp", "flow_id": "f3", "timestamp": 1609459300}
+    ],
+    "protocols_seen": ["tcp"],
+    "protocol_count": 1,
+    "evidence_density": 0.2,
+    "ambiguity": {}
+  },
+  {
+    "host_id": "host-C",
+    "capture_id": "pcap-C",
+    "ips": ["10.0.1.5"],
+    "mac": "DD:EE:FF:66:77:88",
+    "tcp_fingerprint": {"ttl": {"inferred_initial": 64}, "confidence": 0.4},
+    "ssh_fingerprint": {"confidence": 0.0},
+    "evidence": [
+      {"source": "tcp_extractor", "attribute": "tcp.ttl", "value": 64, "confidence_hint": 0.4, "protocol": "tcp", "flow_id": "f4", "timestamp": 1609459400}
+    ],
+    "protocols_seen": ["tcp"],
+    "protocol_count": 1,
+    "evidence_density": 0.1,
+    "ambiguity": {}
+  }
+]

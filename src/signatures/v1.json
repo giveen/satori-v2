@@ -1,0 +1,28 @@
+{
+  "version": "v1",
+  "protocol_weights": {
+    "tcp": 1.0,
+    "ssh": 1.2,
+    "dhcp": 1.0,
+    "dns": 1.0,
+    "ntp": 1.0
+  },
+  "baseline_threshold": 0.1,
+  "ambiguity_penalties": {
+    "nat_suspected": 0.3,
+    "shared_ip": 0.4
+  },
+  "traits": {
+    "tcp:ttl:64": {
+      "matches": {
+        "Ubuntu": 1.0,
+        "Debian": 0.9
+      }
+    },
+    "ssh:kex:curve25519-sha256@libssh.org": {
+      "matches": {
+        "Ubuntu": 0.8
+      }
+    }
+  }
+}

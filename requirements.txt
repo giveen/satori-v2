@@ -1,0 +1,6 @@
+pcapng==0.1.25
+dpkt
+pytest
+flake8
+pre-commit
+black
