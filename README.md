@@ -1,4 +1,4 @@
-# Satori
+# Satori - Version 2
 
 ## Intro
 
@@ -52,8 +52,6 @@ Replay and stream per-host JSON:
 
 ```bash
 python -m satori.cli analyze tests/data/http.cap \
-  --use-nmap-db \
-  --nmap-db-path tests/data/nmap_test_db.json \
   --live-stdout \
   --live-ndjson
 ```
@@ -98,32 +96,17 @@ Example output line:
 ```json
 {"host_id":"host:abc123","ips":["192.168.0.10"],"flows":["192.168.0.1:67-192.168.0.10:68"],"os_candidates":[]}
 ```
-
-Pipe live output into `jq`:
-
-```bash
 python -m satori.cli analyze \
   --live \
   --interface eth0 \
   --live-stdout \
   --live-ndjson \
-| jq -c '{host_id, ips, flows, os_candidates}'
-```
-
-## Output model
-
-Satori emits incremental host updates rather than monolithic reports during
 live operation.
-
 User-facing JSON focuses on the minimal fields useful for downstream
 processing:
 
-- `host_id`
-- `ips`
 - `flows`
 - `os_candidates`
-
-Internal processing metadata is intentionally excluded from the live output.
 
 ## Common options
 
