@@ -96,12 +96,15 @@ Example output line:
 ```json
 {"host_id":"host:abc123","ips":["192.168.0.10"],"flows":["192.168.0.1:67-192.168.0.10:68"],"os_candidates":[]}
 ```
+
+```bash
 python -m satori.cli analyze \
   --live \
   --interface eth0 \
   --live-stdout \
   --live-ndjson \
-live operation.
+```
+
 User-facing JSON focuses on the minimal fields useful for downstream
 processing:
 

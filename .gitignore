@@ -54,3 +54,13 @@ desktop.ini
 
 # Logs
 *.log
+
+# Ignore test scripts (keep test data and other artifacts)
+# Ignore Python test files under tests/ but not data files.
+tests/**/*.py
+tests/*.py
+tests/**/__pycache__/
+tests/**/.pytest_cache/
+
+# Ignore docs directory (documentation source)
+docs/
