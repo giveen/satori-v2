@@ -119,3 +119,18 @@ processing:
 
 ---
 
+
+If you want help with examples, testing PCAPs, or using the Nmap OS DB for
+enrichment, open an issue or ask in the repository and I'll add targeted
+examples.
+
+## Inspired by
+
+- https://github.com/NikolaiT/zardaxt
+- https://github.com/xnih/satori
+
+## Testing done on
+
+- https://weberblog.net/the-ultimate-pcap/
+- https://wiki.wireshark.org/samplecaptures
+
