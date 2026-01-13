@@ -140,8 +140,7 @@ examples.
 
 ---
 
-##
-VIBE CODED 
+## VIBE CODED 
 This was vibe-coded into existance. I am not a programmer, dang it.
 - Planning Agent: qwen2.5:7b-instruct
 - Coding Agent: GPT-5-mini
