@@ -65,6 +65,8 @@ tests/**/.pytest_cache/
 # Ignore docs directory (documentation source)
 docs/
 
-# Ignore expected test outputs under tests/
+# Ignore expected test outputs under tests/ (but track regression snapshot fixtures)
 tests/expected*
 tests/**/expected*
+!tests/expected_os_snapshots/
+!tests/expected_os_snapshots/**

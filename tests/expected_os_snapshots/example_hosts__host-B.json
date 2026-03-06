@@ -1,0 +1,1 @@
+{"candidates":[],"explanation":{"by_trait":{"tcp:ttl:128":{"Windows":0.63,"Windows Server":0.651}},"summary":""},"generated_by":"phase2-v0.1","metadata":{"ambiguity_flags":{"nat_suspected":false,"shared_ip":false},"evidence_density":0.2,"protocol_count":1,"protocol_coverage":["tcp"]},"os_inference_schema_version":"os_inference/v1","signature_table_version":"v1"}
