@@ -56,16 +56,27 @@ def extract_from_flow(flow: Flow) -> list[dict]:
             "provenance": {"flow_id": flow.flow_id, "pkt_index": idx, "ts": pkt.ts},
             "score_hint": 0.6,
         })
-        # normalized evidence: EDNS present and UDP payload size
+        # normalized evidence: EDNS presence and EDNS advertised buffer size
         norm = []
+        edns_present = False
+        edns_buf_size = None
         try:
-            # EDNS OPT RR presence approximated by any AR record with type 41
-            edns_present = any(getattr(a, "type", None) == 41 for a in getattr(dns, "ar", []) or [])
+            for ar_rec in getattr(dns, "ar", []) or []:
+                if getattr(ar_rec, "type", None) == 41:  # OPT record
+                    edns_present = True
+                    # CLASS field of OPT record = advertised UDP payload size
+                    buf = getattr(ar_rec, "cls", None)
+                    if buf is not None:
+                        try:
+                            edns_buf_size = int(buf)
+                        except Exception:
+                            pass
+                    break
         except Exception:
-            edns_present = False
-        norm.append(ev.make_evidence("dns_extractor", "udp", "dns.edns_present", bool(edns_present), 0.2, None, flow.flow_id, pkt.ts, {"pkt_index": idx}))
-        # udp payload size
-        norm.append(ev.make_evidence("dns_extractor", "udp", "dns.udp_payload_size", len(udp.data), 0.2, None, flow.flow_id, pkt.ts, {"pkt_index": idx}))
+            pass
+        norm.append(ev.make_evidence("dns_extractor", "udp", "dns.edns_present", edns_present, 0.2, None, flow.flow_id, pkt.ts, {"pkt_index": idx}))
+        if edns_buf_size is not None:
+            norm.append(ev.make_evidence("dns_extractor", "udp", "dns.edns_buf_size", edns_buf_size, 0.3, None, flow.flow_id, pkt.ts, {"pkt_index": idx}))
         evidence[-1]["evidence_norm"] = norm
 
     return evidence

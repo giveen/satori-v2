@@ -222,6 +222,25 @@ def _extract_ssh_traits(ssh: Dict[str, Any], evidence_list: List[Dict[str, Any]]
     return traits
 
 
+def _decode_dhcp_vendor(val) -> str | None:
+    """Decode a DHCP vendor class value which may be hex-encoded bytes or raw ASCII."""
+    if not val:
+        return None
+    if isinstance(val, bytes):
+        return val.decode("ascii", errors="replace").strip() or None
+    if isinstance(val, str):
+        # If the evidence was serialised through make_evidence, bytes→hex was applied.
+        # Try to hex-decode to recover the original ASCII text.
+        try:
+            decoded = bytes.fromhex(val).decode("ascii", errors="replace")
+            if any(c.isalpha() for c in decoded):
+                return decoded.strip()
+        except Exception:
+            pass
+        return val.strip() or None
+    return None
+
+
 def _extract_dhcp_traits(host: Dict[str, Any]) -> List[Tuple[str, bool, str]]:
     traits = []
     for ev in host.get("evidence", []) or []:
@@ -229,41 +248,84 @@ def _extract_dhcp_traits(host: Dict[str, Any]) -> List[Tuple[str, bool, str]]:
         if not isinstance(ev, dict):
             continue
         attr = ev.get("attribute")
+
         if attr == "dhcp.param_request_list":
             val = ev.get("value")
+            if isinstance(val, bytes):
+                val = val.hex()
             if isinstance(val, str) and val:
                 traits.append((f"dhcp:prl:{_norm_token(val)}", False, evidence_sha1(ev)))
-        # top-level dhcp blocks
+
+        elif attr == "dhcp.vendor_class_id":
+            text = _decode_dhcp_vendor(ev.get("value"))
+            if text:
+                normed = _norm_token(text[:50])
+                if normed:
+                    traits.append((f"dhcp:vendor:{normed}", False, evidence_sha1(ev)))
+
+        # legacy top-level dhcp blocks (raw extractor dicts)
         if ev.get("type") == "dhcp" and isinstance(ev.get("dhcp"), dict):
             opts = ev.get("dhcp", {}).get("options") or {}
-            # message type
-            mt = opts.get("53")
-            if mt:
+            # message type — option 53 (may be bytes, int, or hex string)
+            mt_raw = opts.get(53) or opts.get("53")
+            if mt_raw:
                 try:
-                    mt_i = int(mt, 16)
-                    mt_map = {1: "discover", 2: "offer", 3: "request", 4: "decline", 5: "ack", 8: "inform"}
+                    if isinstance(mt_raw, (bytes, bytearray)):
+                        mt_i = mt_raw[0]
+                    elif isinstance(mt_raw, int):
+                        mt_i = mt_raw
+                    else:
+                        mt_i = int(str(mt_raw), 16)
+                    mt_map = {1: "discover", 2: "offer", 3: "request", 4: "decline",
+                              5: "ack", 8: "inform"}
                     mname = mt_map.get(mt_i, f"type{mt_i}")
                     traits.append((f"dhcp:msg:{mname}", False, evidence_sha1(ev)))
                 except Exception:
                     pass
-            # vendor class typically option 60
-            vendor = opts.get("60")
-            if vendor:
-                traits.append((f"dhcp:vendor:{_norm_token(vendor)}", False, evidence_sha1(ev)))
+            # vendor class — option 60
+            vendor_raw = opts.get(60) or opts.get("60")
+            if vendor_raw:
+                text = _decode_dhcp_vendor(vendor_raw)
+                if text:
+                    normed = _norm_token(text[:50])
+                    if normed:
+                        traits.append((f"dhcp:vendor:{normed}", False, evidence_sha1(ev)))
 
     return traits
 
 
 def _extract_dns_ntp_traits(host: Dict[str, Any]) -> List[Tuple[str, bool, str]]:
     traits = []
-    # DNS: EDNS presence
     for ev in host.get("evidence", []) or []:
         if not isinstance(ev, dict):
             continue
         attr = ev.get("attribute") or ""
-        if "edns" in attr:
-            traits.append(("dns:edns:present", False, evidence_sha1(ev)))
-        if attr.startswith("dns.ttl"):
+
+        # --- DNS ---
+        if attr == "dns.edns_present":
+            val = ev.get("value")
+            if val is True or val == 1 or str(val).lower() == "true":
+                traits.append(("dns:edns:present", False, evidence_sha1(ev)))
+            elif val is False or val == 0 or str(val).lower() == "false":
+                traits.append(("dns:edns:absent", False, evidence_sha1(ev)))
+
+        elif attr == "dns.edns_buf_size":
+            val = ev.get("value")
+            try:
+                v = int(val)
+                # Bucket into known OS-correlated sizes
+                if v >= 4096:
+                    traits.append(("dns:edns_buf:4096", False, evidence_sha1(ev)))
+                elif v >= 1280:
+                    traits.append(("dns:edns_buf:1280", False, evidence_sha1(ev)))
+                elif v >= 1232:
+                    traits.append(("dns:edns_buf:1232", False, evidence_sha1(ev)))
+                elif v >= 512:
+                    traits.append(("dns:edns_buf:512", False, evidence_sha1(ev)))
+            except Exception:
+                pass
+
+        elif attr.startswith("dns.ttl"):
             val = ev.get("value")
             try:
                 v = int(val)
@@ -276,11 +338,34 @@ def _extract_dns_ntp_traits(host: Dict[str, Any]) -> List[Tuple[str, bool, str]]
             except Exception:
                 pass
 
-    # NTP: client mode
-    for ev in host.get("evidence", []) or []:
-        if not isinstance(ev, dict):
-            continue
-        if ev.get("attribute") == "ntp.mode":
+        # --- NTP ---
+        elif attr == "ntp.version":
+            val = ev.get("value")
+            try:
+                v = int(val)
+                if v in (2, 3, 4):
+                    traits.append((f"ntp:version:{v}", False, evidence_sha1(ev)))
+            except Exception:
+                pass
+
+        elif attr == "ntp.stratum":
+            val = ev.get("value")
+            try:
+                v = int(val)
+                # Only standard stratum values 0-15 are spec-defined
+                if 0 <= v <= 15:
+                    traits.append((f"ntp:stratum:{v}", False, evidence_sha1(ev)))
+            except Exception:
+                pass
+
+        elif attr == "ntp.ref_id":
+            val = ev.get("value")
+            if isinstance(val, str) and val:
+                normed = _norm_token(val)
+                if normed:
+                    traits.append((f"ntp:ref_id:{normed}", False, evidence_sha1(ev)))
+
+        elif attr == "ntp.mode":
             val = ev.get("value")
             if val and str(val).lower().startswith("client"):
                 traits.append(("ntp:mode:client", False, evidence_sha1(ev)))

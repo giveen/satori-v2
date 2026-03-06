@@ -60,11 +60,15 @@ def _attrs_for_trait(trait: str) -> List[str]:
         "ssh:mac:": ["ssh.mac_algorithms_c2s", "ssh.mac_algorithms_s2c"],
         "ssh:comp:": ["ssh.comp_algorithms_c2s", "ssh.comp_algorithms_s2c"],
         "ssh:software_family:": ["ssh.software_family"],
-        "dhcp:vendor:": ["dhcp.vendor_class"],
+        "dhcp:vendor:": ["dhcp.vendor_class_id", "dhcp.vendor_class"],
         "dhcp:prl:": ["dhcp.param_request_list"],
         "dhcp:msg:": ["dhcp.message_type"],
-        "dns:edns:": ["dns.edns"],
+        "dns:edns:": ["dns.edns_present"],
+        "dns:edns_buf:": ["dns.edns_buf_size"],
         "dns:ttl:": ["dns.ttl"],
+        "ntp:version:": ["ntp.version"],
+        "ntp:stratum:": ["ntp.stratum"],
+        "ntp:ref_id:": ["ntp.ref_id"],
         "ntp:mode:": ["ntp.mode"],
     }
     for prefix, attrs in _MAP.items():

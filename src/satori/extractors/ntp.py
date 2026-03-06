@@ -27,10 +27,16 @@ def _parse_ntp(payload: bytes) -> t.Optional[dict]:
         poll = payload[2]
         precision = payload[3]
         ref_id = payload[12:16]
-        try:
-            ref_id_text = socket.inet_ntoa(ref_id)
-        except Exception:
-            ref_id_text = ref_id.hex()
+        # Stratum 0 (KoD "kiss-o'-death") and 1 (primary reference clock) use a
+        # 4-character ASCII identifier (e.g. "GPS\x00", "PPS\x00", "PTB\x00").
+        # Stratum ≥ 2 encodes the IPv4 address of the upstream reference.
+        if stratum <= 1:
+            ref_id_text = ref_id.decode("ascii", errors="replace").rstrip("\x00")
+        else:
+            try:
+                ref_id_text = socket.inet_ntoa(ref_id)
+            except Exception:
+                ref_id_text = ref_id.hex()
 
         # timestamps: reference(16-23), originate(24-31), receive(32-39), transmit(40-47)
         def _read_ts(off: int) -> float:
