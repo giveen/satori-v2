@@ -14,7 +14,6 @@ from math import isclose
 from .evidence import evidence_sha1, canonicalize_evidence
 from .traits import extract_traits
 from .scoring import score_host, _load_signature_table
-from ..nmap_lookup import lookup_os_from_nmap
 
 
 _FLOAT_PREC = 3
@@ -71,6 +70,7 @@ def _attrs_for_trait(trait: str) -> List[str]:
         "ntp:ref_id:": ["ntp.ref_id"],
         "ntp:mode:": ["ntp.mode"],
         "tls:ja3:": ["tls.ja3"],
+        "tcp:ja4t:": ["tcp.ja4t"],
     }
     for prefix, attrs in _MAP.items():
         if trait.startswith(prefix):
@@ -102,7 +102,7 @@ def _evidence_refs_for_trait(trait: str, host: Dict[str, Any]) -> List[Dict[str,
     return refs
 
 
-def build_os_inference(host: Dict[str, Any], sig_table: Dict[str, Any] = None, nmap_db_path: str = None) -> Dict[str, Any]:
+def build_os_inference(host: Dict[str, Any], sig_table: Dict[str, Any] = None, nmap_db_path: str = None) -> Dict[str, Any]:  # nmap_db_path kept for backwards compat but ignored
     """Return a new `os_inference` dict for given host without mutating host.
 
     Enforces determinism and provenance rules described in T4.
@@ -216,54 +216,7 @@ def build_os_inference(host: Dict[str, Any], sig_table: Dict[str, Any] = None, n
         'metadata': metadata,
     }
 
-    # Optionally augment candidates with Nmap DB lookup
-    try:
-        nmap_candidates = []
-        if nmap_db_path:
-            # derive a simple fingerprint dict for lookup (normalize shapes)
-            tcp = h.get('tcp_fingerprint') if isinstance(h.get('tcp_fingerprint'), dict) else {}
-            # normalize options, ttl, window into a simple form expected by lookup
-            norm_tcp = {}
-            opts = tcp.get('tcp_options_order') or tcp.get('options') or []
-            if opts:
-                norm_tcp['options'] = opts
-            # ttl can be structure with inferred_initial or numeric
-            ttl = None
-            if isinstance(tcp.get('ttl'), dict):
-                ttl = tcp.get('ttl', {}).get('inferred_initial')
-            elif isinstance(tcp.get('ttl'), (int, float)):
-                ttl = tcp.get('ttl')
-            if ttl is not None:
-                norm_tcp['ttl'] = int(ttl)
-            # window size: median from window_size.values or direct numeric
-            wv = None
-            if isinstance(tcp.get('window_size'), dict):
-                wv_list = tcp.get('window_size', {}).get('values') or []
-                if wv_list:
-                    wv = sorted(wv_list)[len(wv_list)//2]
-            elif isinstance(tcp.get('window'), (int, float)):
-                wv = tcp.get('window')
-            if wv is not None:
-                norm_tcp['window'] = int(wv)
-
-            fp = {'tcp_fingerprint': norm_tcp, 'ssh_fingerprint': h.get('ssh_fingerprint') if isinstance(h.get('ssh_fingerprint'), dict) else {}}
-            nmap_candidates = lookup_os_from_nmap(fp, db_path=nmap_db_path)
-            # normalize shape to Phase2 candidate shape
-            for nc in nmap_candidates:
-                cand = {
-                    'name': nc.get('name'),
-                    'score': _round(nc.get('score', 0.0)),
-                    'traits_matched': [],
-                    'evidence_refs': [{'evidence_id': ref} for ref in (nc.get('evidence_refs') or [])],
-                    'conflicts': [],
-                }
-                candidates.append(cand)
-    except Exception:
-        # fail gracefully: leave original candidates
-        pass
-
     # sort and dedupe candidates deterministically
-    # First, round scores and ensure stable ordering
     for c in candidates:
         if 'score' in c:
             c['score'] = _round(c['score'])

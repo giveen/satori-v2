@@ -1,6 +1,35 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import dpkt
 from satori import evidence as ev
+
+
+def compute_ja4t(
+    window: Optional[int],
+    opts_kinds: List[int],
+    mss: Optional[int],
+    wscale: Optional[int],
+) -> Optional[str]:
+    """Compute a JA4T fingerprint string from TCP SYN fields.
+
+    Format: ``{window}_{options_hex}_{wscale}``
+
+    - *window*: TCP receive window size (decimal)
+    - *options_hex*: each TCP option kind encoded as two uppercase hex digits,
+      concatenated in the order they appear in the SYN header
+    - *wscale*: window scale exponent (decimal); ``0`` when option is absent
+
+    MSS is intentionally excluded from the composite key because its value is
+    often clamped by network-path MTU, reducing cross-path matching reliability.
+    The p0f.fp reference database also uses wildcard (*) for MSS in most
+    signatures, making MSS-inclusive fingerprints unmatchable.
+
+    Returns ``None`` when insufficient data is available (no window / no opts).
+    """
+    if window is None or not opts_kinds:
+        return None
+    opts_hex = "".join(f"{k:02X}" for k in opts_kinds)
+    wsc_val = wscale if wscale is not None else 0
+    return f"{window}_{opts_hex}_{wsc_val}"
 
 
 def _parse_options_bytes(data: bytes) -> List[dict]:
@@ -124,6 +153,16 @@ def extract_from_flow(flow) -> List[Dict[str, Any]]:
                     ev_items.append(ev.make_evidence("tcp_extractor", "tcp", "tcp.wscale", val[0], 0.7, None, getattr(flow, "flow_id", None), pkt.ts, provenance))
             if k == 8:
                 ev_items.append(ev.make_evidence("tcp_extractor", "tcp", "tcp.ts_present", True, 0.7, None, getattr(flow, "flow_id", None), pkt.ts, provenance))
+
+        # JA4T composite fingerprint
+        ja4t = compute_ja4t(
+            window=getattr(tcp, "win", None),
+            opts_kinds=[o.get("kind") for o in opts if o.get("kind") is not None],
+            mss=legacy["tcp"].get("mss"),
+            wscale=legacy["tcp"].get("wscale"),
+        )
+        if ja4t:
+            ev_items.append(ev.make_evidence("tcp_extractor", "tcp", "tcp.ja4t", ja4t, 0.8, None, getattr(flow, "flow_id", None), pkt.ts, provenance))
 
         legacy["evidence_norm"] = ev_items
         evidence.append(legacy)

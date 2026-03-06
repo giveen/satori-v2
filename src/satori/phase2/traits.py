@@ -390,6 +390,26 @@ def _extract_tls_traits(host: Dict[str, Any]) -> List[Tuple[str, bool, str]]:
     return traits
 
 
+def _extract_tcp_ja4t_traits(host: Dict[str, Any]) -> List[Tuple[str, bool, str]]:
+    """Extract JA4T composite TCP fingerprint traits from host evidence.
+
+    Looks for ``tcp.ja4t`` evidence attributes and emits ``tcp:ja4t:{fingerprint}``
+    traits.  Only the first (oldest, from SYN) JA4T value per host is used to
+    avoid drift from retransmissions.
+    """
+    traits = []
+    seen: set = set()
+    for ev in host.get("evidence", []) or []:
+        if not isinstance(ev, dict):
+            continue
+        if (ev.get("attribute") or "") == "tcp.ja4t":
+            val = ev.get("value")
+            if isinstance(val, str) and val and val not in seen:
+                seen.add(val)
+                traits.append((f"tcp:ja4t:{val}", False, evidence_sha1(ev)))
+    return traits
+
+
 def extract_traits(host: Dict[str, Any]) -> List[str]:
     """Extract a sorted list of normalized trait strings from a Phase 1 host dict.
 
@@ -406,6 +426,7 @@ def extract_traits(host: Dict[str, Any]) -> List[str]:
     traits_with_meta.extend(_extract_dhcp_traits(host))
     traits_with_meta.extend(_extract_dns_ntp_traits(host))
     traits_with_meta.extend(_extract_tls_traits(host))
+    traits_with_meta.extend(_extract_tcp_ja4t_traits(host))
 
     # Deduplicate by trait key; keep first baseline flag True if any
     seen = {}

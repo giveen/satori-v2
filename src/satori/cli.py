@@ -37,22 +37,6 @@ def _doctor_checks():
         live_detail = f"raw socket check failed: {e}"
     report["checks"].append({"name": "live_capture_permission", "ok": live_ok, "detail": live_detail})
 
-    # nmap db availability (optional)
-    nmap_ok = False
-    nmap_detail = "not checked"
-    try:
-        cache = os.path.expanduser(os.path.join('~', '.cache', 'satori', 'nmap-os-db'))
-        if Path(cache).exists():
-            nmap_ok = True
-            nmap_detail = str(cache)
-        else:
-            nmap_ok = False
-            nmap_detail = f"missing: {cache}"
-    except Exception as e:
-        nmap_ok = False
-        nmap_detail = str(e)
-    report["checks"].append({"name": "nmap_db", "ok": nmap_ok, "detail": nmap_detail})
-
     # writable output dir
     out_dir = Path('.') / 'satori-output'
     try:
@@ -102,8 +86,6 @@ def build_parser():
     a.add_argument("--live-tabular", action="store_true", help="Print compact tabular host updates to stdout")
     a.add_argument("--out-summary", help=argparse.SUPPRESS, metavar="FILE")
     a.add_argument("--host-summary", action="store_true", dest="phase3_summary", help="Produce per-host summary output")
-    a.add_argument("--use-nmap-db", action="store_true", help="Enable Nmap OS DB lookup if available")
-    a.add_argument("--nmap-db-path", help="Path to Nmap OS fingerprint DB for enrichment (optional)")
     a.add_argument("--out-temporal-summary", help=argparse.SUPPRESS, dest="out_summary_4", metavar="FILE")
     a.add_argument("--temporal-summary", action="store_true", dest="phase4_summary", help=argparse.SUPPRESS)
     a.add_argument("--out-temporal-metrics", help=argparse.SUPPRESS, dest="out_metrics_4", metavar="FILE")
@@ -151,10 +133,10 @@ def main(argv=None):
     log = logging.getLogger("satori.cli")
     # apply profile presets (simple, deterministic mappings)
     profile_presets = {
-        "default": {"phase7_anomalies": True, "alerts": True, "use_nmap_db": True},
-        "ci": {"phase7_anomalies": True, "alerts": True, "use_nmap_db": False, "json_only": True, "quiet": True},
-        "soc": {"phase7_anomalies": True, "alerts": True, "use_nmap_db": True, "live": True, "live_alerts": True},
-        "forensics": {"phase7_anomalies": True, "alerts": False, "use_nmap_db": True},
+        "default": {"phase7_anomalies": True, "alerts": True},
+        "ci": {"phase7_anomalies": True, "alerts": True, "json_only": True, "quiet": True},
+        "soc": {"phase7_anomalies": True, "alerts": True, "live": True, "live_alerts": True},
+        "forensics": {"phase7_anomalies": True, "alerts": False},
     }
     preset = getattr(args, 'profile', None)
     if preset in profile_presets:
@@ -221,23 +203,6 @@ def main(argv=None):
                 
 
                 pcap_file = getattr(args, 'pcap_file', None) or args.pcap
-
-                # resolve nmap DB path for live mode if requested
-                nmap_db_path = None
-                if getattr(args, 'use_nmap_db', False):
-                    nmap_db_path = getattr(args, 'nmap_db_path', None)
-                    if not nmap_db_path:
-                        try:
-                            from .nmap_lookup import download_nmap_os_db
-
-                            cache_dir = os.path.expanduser(os.path.join('~', '.cache', 'satori'))
-                            os.makedirs(cache_dir, exist_ok=True)
-                            candidate = os.path.join(cache_dir, 'nmap-os-db')
-                            res = download_nmap_os_db(candidate)
-                            if res:
-                                nmap_db_path = res
-                        except Exception:
-                            nmap_db_path = None
 
                 # determine snapshot prefix early so callbacks can reference it
                 snap_prefix = capture_prefix
@@ -401,7 +366,6 @@ def main(argv=None):
                     snapshot_batch_size=getattr(args, 'snapshot_batch_size', None),
                     ndjson=getattr(args, 'live_ndjson', False),
                     live_metrics=getattr(args, 'live_metrics', False),
-                    nmap_db_path=nmap_db_path,
                     # live stdout/tabular
                     
                 ):
@@ -629,24 +593,7 @@ def main(argv=None):
         try:
             from .phase3.integration import integrate_phase3
 
-            nmap_db_path = None
-            if getattr(args, 'use_nmap_db', False):
-                nmap_db_path = getattr(args, 'nmap_db_path', None)
-                if not nmap_db_path:
-                    # try to download into a local cache
-                    try:
-                        from .nmap_lookup import download_nmap_os_db
-
-                        cache_dir = os.path.expanduser(os.path.join('~', '.cache', 'satori'))
-                        os.makedirs(cache_dir, exist_ok=True)
-                        candidate = os.path.join(cache_dir, 'nmap-os-db')
-                        res = download_nmap_os_db(candidate)
-                        if res:
-                            nmap_db_path = res
-                    except Exception:
-                        nmap_db_path = None
-
-            hosts_output = integrate_phase3(hosts_output, nmap_db_path=nmap_db_path)
+            hosts_output = integrate_phase3(hosts_output)
         except Exception:
             # if Phase 3 integration fails, continue without aggregated data
             hosts_output = hosts_output

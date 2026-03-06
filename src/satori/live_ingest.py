@@ -124,7 +124,7 @@ def feed_live_evidence(
     snapshot_batch_size: Optional[int] = None,
     ndjson: bool = False,
     live_metrics: bool = False,
-    nmap_db_path: Optional[str] = None,
+    nmap_db_path: Optional[str] = None,  # kept for backwards compat, ignored
 ) -> Generator[Dict[str, Any], None, None]:
     """Consume an evidence generator and incrementally update host state.
 

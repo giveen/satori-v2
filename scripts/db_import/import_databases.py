@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-Import nmap-os-db and p0f.fp fingerprint databases into Satori's v1.json
-signature file.
+Import p0f.fp fingerprint database into Satori's v1.json signature file.
 
 This script:
-1. Parses nmap-os-db and p0f.fp TCP SYN signatures
-2. Computes per-OS trait frequency scores
+1. Parses p0f.fp TCP SYN signatures
+2. Computes per-OS trait frequency scores (individual fields AND JA4T composites)
 3. Merges (adds new / updates) traits in src/signatures/v1.json
 
 Usage:
@@ -26,7 +25,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 V1_JSON = ROOT / "src" / "signatures" / "v1.json"
-NMAP_DB = ROOT / "scripts" / "db_import" / "nmap-os-db"
 P0F_DB = ROOT / "scripts" / "db_import" / "p0f.fp"
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -290,6 +288,23 @@ def parse_p0f_sig(sig_str: str):
         result["ts_present"] = 8 in opts
 
     return result if result else None
+
+
+def p0f_sig_to_ja4t(sig: dict) -> str | None:
+    """Compute a JA4T fingerprint string from a parsed p0f signature dict.
+
+    Format: ``{window}_{options_hex}_{wscale}``
+
+    MSS is excluded (see ``compute_ja4t`` in extractors/tcp.py for rationale).
+    Returns ``None`` when not enough concrete data is available.
+    """
+    window = sig.get("window")
+    opts = sig.get("opts_kinds") or []
+    if window is None or not opts:
+        return None
+    opts_hex = "".join(f"{k:02X}" for k in opts)
+    wsc_val = sig.get("wscale", 0) or 0
+    return f"{window}_{opts_hex}_{wsc_val}"
 
 
 def load_p0f(path: Path, verbose: bool = False) -> list[tuple[str, dict]]:
@@ -660,6 +675,11 @@ def build_counts(records: list[tuple[str, dict]]) -> dict[str, dict[str, int]]:
             ts_key = "tcp:ts:present" if d["ts_present"] else "tcp:ts:absent"
             counts[ts_key][os_name] += 1
 
+        # JA4T composite — emitted when window + opts are concrete integers
+        ja4t = p0f_sig_to_ja4t(d)
+        if ja4t:
+            counts[f"tcp:ja4t:{ja4t}"][os_name] += 1
+
     return dict(counts), dict(os_totals)
 
 
@@ -739,7 +759,7 @@ def merge_into_v1(
         if trait_key not in traits:
             # Brand new trait
             traits[trait_key] = {
-                "comment": f"Imported from nmap/p0f database",
+                "comment": f"Imported from p0f database",
                 "matches": db_matches,
             }
             new_count += 1
@@ -781,7 +801,7 @@ def merge_into_v1(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="Import nmap-os-db + p0f.fp into v1.json")
+    parser = argparse.ArgumentParser(description="Import p0f.fp into v1.json")
     parser.add_argument("--dry-run", action="store_true",
                         help="Print results without writing v1.json")
     parser.add_argument("--verbose", action="store_true",
@@ -793,7 +813,7 @@ def main():
     args = parser.parse_args()
 
     print("═" * 60)
-    print("Satori DB Importer")
+    print("Satori DB Importer (p0f only)")
     print("═" * 60)
 
     # ── Load p0f ─────────────────────────────────────────────────
@@ -807,19 +827,8 @@ def main():
     for k, v in sorted(os_dist_p0f.items()):
         print(f"    {k}: {v}")
 
-    # ── Load nmap ─────────────────────────────────────────────────
-    print(f"\nLoading nmap-os-db: {NMAP_DB}")
-    nmap_records = load_nmap(NMAP_DB, verbose=args.verbose)
-    print(f"  Parsed {len(nmap_records)} nmap fingerprint records")
-
-    os_dist_nmap = defaultdict(int)
-    for os_name, _ in nmap_records:
-        os_dist_nmap[os_name] += 1
-    for k, v in sorted(os_dist_nmap.items()):
-        print(f"    {k}: {v}")
-
-    # ── Combine all records ────────────────────────────────────────
-    all_records = p0f_records + nmap_records
+    # ── Build traits ───────────────────────────────────────────────
+    all_records = p0f_records
     print(f"\nTotal records: {len(all_records)}")
 
     counts, os_totals = build_counts(all_records)
