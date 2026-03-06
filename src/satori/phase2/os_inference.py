@@ -40,37 +40,60 @@ def _pointer_from_evidence(ev: Dict[str, Any]) -> List[Any]:
     return ptr
 
 
+def _attrs_for_trait(trait: str) -> List[str]:
+    """Return the evidence attribute names that correspond to this trait key."""
+    # Map trait key prefix to the evidence attribute(s) that produced it.
+    # This is the inverse of traits.py extract_*_traits().
+    _MAP = {
+        "tcp:ttl:": ["ip.ttl"],
+        "tcp:window:": ["tcp.window_size"],
+        "tcp:mss:": ["tcp.mss"],
+        "tcp:wscale:": ["tcp.wscale"],
+        "tcp:opts:": ["tcp.opts_order"],
+        "tcp:ts:": ["tcp.ts_present"],
+        "tcp:ecn:": ["tcp.ecn"],
+        "tcp:isn:": ["tcp.isn"],
+        "ssh:banner:": ["ssh.banner"],
+        "ssh:kex:": ["ssh.kex_algorithms"],
+        "ssh:hostkey:": ["ssh.hostkey_algorithms"],
+        "ssh:cipher:": ["ssh.encryption_algorithms_c2s", "ssh.encryption_algorithms_s2c"],
+        "ssh:mac:": ["ssh.mac_algorithms_c2s", "ssh.mac_algorithms_s2c"],
+        "ssh:comp:": ["ssh.comp_algorithms_c2s", "ssh.comp_algorithms_s2c"],
+        "ssh:software_family:": ["ssh.software_family"],
+        "dhcp:vendor:": ["dhcp.vendor_class"],
+        "dhcp:prl:": ["dhcp.param_request_list"],
+        "dhcp:msg:": ["dhcp.message_type"],
+        "dns:edns:": ["dns.edns"],
+        "dns:ttl:": ["dns.ttl"],
+        "ntp:mode:": ["ntp.mode"],
+    }
+    for prefix, attrs in _MAP.items():
+        if trait.startswith(prefix):
+            return attrs
+    # fallback: derive from the first two colon-separated components
+    parts = trait.split(":")
+    if len(parts) >= 2:
+        return [f"{parts[0]}.{parts[1]}"]
+    return []
+
+
 def _evidence_refs_for_trait(trait: str, host: Dict[str, Any]) -> List[Dict[str, Any]]:
+    attrs = _attrs_for_trait(trait)
     refs = []
     for ev in host.get('evidence') or []:
         if not isinstance(ev, dict):
             continue
-        matched = False
-        # evidence_norm entries
-        for n in (ev.get('evidence_norm') or []):
-            try:
-                if trait in (str(n.get('attribute') or '')).lower() or trait in (str(n.get('value') or '')).lower():
-                    matched = True
-                    break
-            except Exception:
-                continue
-        if not matched:
-            if trait in (str(ev.get('attribute') or '')).lower() or trait in (str(ev.get('value') or '')).lower():
-                matched = True
-
-        if matched:
-            # compute canonical id
+        attr = str(ev.get('attribute') or '')
+        if attr in attrs:
             cid = evidence_sha1(ev)
             ptr = _pointer_from_evidence(ev)
-            # contribution placeholder to be filled by caller — keep 0.0 here
             refs.append({
                 'evidence_id': cid,
                 'trait': trait,
                 'contribution': 0.0,
                 'pointer': ptr,
             })
-    # sort by contribution desc then evidence_id asc — contribution ties equal here
-    refs = sorted(refs, key=lambda r: ( -r['contribution'], r['evidence_id']))
+    refs = sorted(refs, key=lambda r: (-r['contribution'], r['evidence_id']))
     return refs
 
 

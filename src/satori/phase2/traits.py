@@ -13,6 +13,66 @@ import re
 _NON_ALNUM_RE = re.compile(r"[^0-9a-z]+")
 
 
+def _kex_family(k: str) -> str:
+    """Return a canonical KEX family name preserving discriminating DH subtype info."""
+    k = k.lower().split('@')[0]
+    # Diffie-Hellman variants — split semantically, not just by first '-' token
+    if k.startswith('diffie-hellman-group-exchange'):
+        return 'dh_gex'
+    if k.startswith('diffie-hellman-group14'):
+        return 'dh_group14'
+    if k.startswith('diffie-hellman-group16'):
+        return 'dh_group16'
+    if k.startswith('diffie-hellman-group18'):
+        return 'dh_group18'
+    if k.startswith('diffie-hellman-group1'):
+        return 'dh_group1'
+    if k.startswith('diffie-hellman'):
+        return 'dh_group14'  # unknown DH group — treat as group14 (most common)
+    if k.startswith('ecdh'):
+        return 'ecdh'  # covers nistp256/384/521 and other ecdh variants
+    if k.startswith('curve25519'):
+        return 'curve25519'
+    if k.startswith('gss'):
+        return 'gss'
+    # fallback: take first hyphen-separated token
+    return _norm_token(k.split('-')[0])
+
+
+def _ssh_software_family(banner: str) -> str | None:
+    """Extract OS-discriminating software family from an SSH banner string.
+
+    Returns a compact lowercase identifier suitable for use in trait keys,
+    or None if no recognizable pattern is found.
+    """
+    b = banner.lower()
+    # Strip transport-layer prefix (SSH-2.0-, SSH-1.99-, etc.)
+    for pfx in ('ssh-2.0-', 'ssh-1.99-', 'ssh-1.5-'):
+        if b.startswith(pfx):
+            b = b[len(pfx):]
+            break
+    if 'cisco' in b:
+        return 'cisco'
+    if 'dropbear' in b:
+        return 'dropbear'
+    if 'libssh2' in b:
+        return 'libssh2'
+    if 'libssh' in b:
+        return 'libssh'
+    if 'openssh' in b:
+        # Distro-specific package build comments follow in the version string
+        if 'ubuntu' in b:
+            return 'openssh_ubuntu'
+        if 'debian' in b:
+            return 'openssh_debian'
+        if 'freebsd' in b or 'hpn' in b:
+            return 'openssh_freebsd'
+        if 'raspbian' in b:
+            return 'openssh_debian'  # Raspbian is Debian-based
+        return 'openssh'
+    return None
+
+
 def _norm_token(s: str) -> str:
     if not isinstance(s, str):
         s = str(s)
@@ -73,28 +133,34 @@ def _extract_tcp_traits(tcp: Dict[str, Any], evidence_list: List[Dict[str, Any]]
     if mv is not None:
         traits.append((f"tcp:mss:{int(mv)}", False, None))
 
-    # wscale
+    # wscale — use the mode (most frequent observed value) to avoid outliers
     wsc = tcp.get("wscale", {}).get("values") or []
     if wsc:
         try:
-            wsc_vals = sorted(int(x) for x in wsc)
-            traits.append((f"tcp:wscale:{wsc_vals[-1]}", False, None))
+            wsc_vals = [int(x) for x in wsc]
+            mode_val = max(set(wsc_vals), key=wsc_vals.count)
+            traits.append((f"tcp:wscale:{mode_val}", False, None))
         except Exception:
             pass
 
-    # options: normalize to sorted order for deterministic output
+    # options: emit a separate trait for each individual opts pattern observed
     opts = tcp.get("tcp_options_order") or []
-    if opts:
-        opts_norm = [_norm_token(x) for x in opts]
-        opts_sorted = sorted(x for x in opts_norm if x)
-        if opts_sorted:
-            traits.append((f"tcp:opts:{','.join(opts_sorted)}", False, None))
+    seen_opts: set = set()
+    for opt_pattern in opts:
+        normed = _norm_token(opt_pattern)
+        if normed and normed not in seen_opts:
+            seen_opts.add(normed)
+            traits.append((f"tcp:opts:{normed}", False, None))
 
-    # ts_present
+    # ts_present — only emit when we have a definitive answer (not unknown/mixed)
     ts = tcp.get("ts_present")
     if ts is not None:
-        val = "present" if str(ts).lower() == "present" else "absent"
-        traits.append((f"tcp:ts:{val}", False, None))
+        ts_lower = str(ts).lower()
+        if ts_lower in ("present", "true"):
+            traits.append(("tcp:ts:present", False, None))
+        elif ts_lower in ("absent", "false"):
+            traits.append(("tcp:ts:absent", False, None))
+        # unknown / mixed → don't emit any ts trait
 
     # Baseline detection: if confidence is baseline (0.25) and no tcp evidence
     baseline_conf = tcp.get("confidence")
@@ -112,22 +178,21 @@ def _extract_ssh_traits(ssh: Dict[str, Any], evidence_list: List[Dict[str, Any]]
     if not ssh:
         return traits
 
-    # banner
+    # banner — extract software family for OS-discriminating signal
     banners = ssh.get("ssh_banner") or []
     if banners:
         b = banners[0]
-        bnorm = _norm_token(b)
-        traits.append((f"ssh:banner:{bnorm}", False, None))
+        fam = _ssh_software_family(b)
+        if fam:
+            traits.append((f"ssh:banner:{fam}", False, None))
 
-    # kex algorithms
+    # kex algorithms — use _kex_family() to preserve DH subtype info
     kexs = ssh.get("kex_algorithms") or []
     kex_names = set()
     for k in kexs:
         if not isinstance(k, str):
             continue
-        # take token before '-' or '@' if present
-        k0 = k.split("-")[0].split('@')[0]
-        kex_names.add(_norm_token(k0))
+        kex_names.add(_kex_family(k))
     for k in sorted(x for x in kex_names if x):
         traits.append((f"ssh:kex:{k}", False, None))
 

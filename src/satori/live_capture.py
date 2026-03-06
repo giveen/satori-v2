@@ -30,11 +30,18 @@ log = logging.getLogger("satori.live_capture")
 def _yield_from_pcap(pcap_file: str, max_packets: Optional[int] = None) -> Generator[Dict[str, Any], None, None]:
     if not os.path.exists(pcap_file):
         raise RuntimeError(f"pcap file not found: {pcap_file}")
+
+    from .flow import FlowEngine
+
     idx = 0
+    fe = FlowEngine()
+
     for ts, raw in iter_packets(pcap_file):
         pkt = parse_raw(ts, raw)
         if pkt is None:
             continue
+        fe.ingest_packet(pkt)
+
         # build a minimal normalized evidence item per packet
         flow_id = f"{pkt.src_ip}:{pkt.src_port}-{pkt.dst_ip}:{pkt.dst_port}"
         ev = make_evidence(
@@ -127,6 +134,20 @@ def _yield_from_pcap(pcap_file: str, max_packets: Optional[int] = None) -> Gener
         if max_packets is not None and idx >= int(max_packets):
             break
 
+    # Second pass: run flow-level SSH extractor now that all packets are assembled.
+    # SSH requires flow context (banner exchange followed by binary KEXINIT packets).
+    try:
+        from .extractors.ssh import extract_from_flow as _ssh_extract
+        for flow in fe.flows():
+            try:
+                ssh_items = _ssh_extract(flow) or []
+                for item in ssh_items:
+                    for ev_norm in (item.get("evidence_norm") or []):
+                        yield ev_norm
+            except Exception:
+                pass
+    except Exception:
+        pass
 
 def _sniff_live(interface: str, bpf_filter: Optional[str], max_packets: Optional[int], timeout: Optional[float]):
     try:
@@ -138,7 +159,7 @@ def _sniff_live(interface: str, bpf_filter: Optional[str], max_packets: Optional
     queue = collections.deque()
     collected = 0
 
-        def _prn(pkt):
+    def _prn(pkt):
         nonlocal collected
         ts = getattr(pkt, "time", time.time())
         raw = bytes(pkt)
@@ -158,79 +179,79 @@ def _sniff_live(interface: str, bpf_filter: Optional[str], max_packets: Optional
             provenance={"live": True},
         )
         queue.append(ev)
-            # also attempt TCP SYN/options extraction for live-sniffed packets
-            try:
-                eth = dpkt.ethernet.Ethernet(raw)
-                ip = eth.data
-                if isinstance(ip, dpkt.ip.IP) and getattr(ip, 'p', None) == dpkt.ip.IP_PROTO_TCP:
-                    tcp = ip.data
-                    flags = getattr(tcp, 'flags', 0) if hasattr(tcp, 'flags') else getattr(tcp, 'th_flags', 0)
-                    if flags & dpkt.tcp.TH_SYN:
-                        try:
-                            raw_tcp = bytes(tcp)
-                            hdr_len = (getattr(tcp, 'off', 5) * 4)
-                            opts_raw = raw_tcp[20:hdr_len] if len(raw_tcp) >= hdr_len else b""
-                        except Exception:
-                            opts_raw = b""
+        # also attempt TCP SYN/options extraction for live-sniffed packets
+        try:
+            eth = dpkt.ethernet.Ethernet(raw)
+            ip = eth.data
+            if isinstance(ip, dpkt.ip.IP) and getattr(ip, 'p', None) == dpkt.ip.IP_PROTO_TCP:
+                tcp = ip.data
+                flags = getattr(tcp, 'flags', 0) if hasattr(tcp, 'flags') else getattr(tcp, 'th_flags', 0)
+                if flags & dpkt.tcp.TH_SYN:
+                    try:
+                        raw_tcp = bytes(tcp)
+                        hdr_len = (getattr(tcp, 'off', 5) * 4)
+                        opts_raw = raw_tcp[20:hdr_len] if len(raw_tcp) >= hdr_len else b""
+                    except Exception:
+                        opts_raw = b""
 
-                        opt_kinds = []
-                        mss = None
-                        wscale = None
-                        ts_present = False
-                        i = 0
-                        while i < len(opts_raw):
-                            kind = opts_raw[i]
-                            opt_kinds.append(kind)
-                            if kind == 0:
-                                break
-                            if kind == 1:
-                                i += 1
-                                continue
-                            if i + 1 >= len(opts_raw):
-                                break
-                            length = opts_raw[i + 1]
-                            if length < 2:
-                                break
-                            val = opts_raw[i + 2 : i + length]
-                            if kind == 2 and len(val) >= 2:
-                                try:
-                                    mss = int.from_bytes(val[:2], 'big')
-                                except Exception:
-                                    pass
-                            if kind == 3 and len(val) >= 1:
-                                try:
-                                    wscale = val[0]
-                                except Exception:
-                                    pass
-                            if kind == 8:
-                                ts_present = True
-                            i += length
-
-                        provenance = {"live": True}
-                        try:
-                            queue.append(make_evidence('tcp_extractor', 'tcp', 'tcp.opts_order', opt_kinds, 0.6, None, flow_id, ts, provenance))
-                            queue.append(make_evidence('tcp_extractor', 'ip', 'ip.ttl', getattr(ip, 'ttl', None), 0.5, None, flow_id, ts, provenance))
-                            queue.append(make_evidence('tcp_extractor', 'tcp', 'tcp.window_size', getattr(tcp, 'win', None), 0.5, None, flow_id, ts, provenance))
-                            if mss is not None:
-                                queue.append(make_evidence('tcp_extractor', 'tcp', 'tcp.mss', mss, 0.7, None, flow_id, ts, provenance))
-                            if wscale is not None:
-                                queue.append(make_evidence('tcp_extractor', 'tcp', 'tcp.wscale', wscale, 0.7, None, flow_id, ts, provenance))
-                            if ts_present:
-                                queue.append(make_evidence('tcp_extractor', 'tcp', 'tcp.ts_present', True, 0.7, None, flow_id, ts, provenance))
+                    opt_kinds = []
+                    mss = None
+                    wscale = None
+                    ts_present = False
+                    i = 0
+                    while i < len(opts_raw):
+                        kind = opts_raw[i]
+                        opt_kinds.append(kind)
+                        if kind == 0:
+                            break
+                        if kind == 1:
+                            i += 1
+                            continue
+                        if i + 1 >= len(opts_raw):
+                            break
+                        length = opts_raw[i + 1]
+                        if length < 2:
+                            break
+                        val = opts_raw[i + 2 : i + length]
+                        if kind == 2 and len(val) >= 2:
                             try:
-                                queue.append(make_evidence('tcp_extractor', 'tcp', 'tcp.isn', int(getattr(tcp, 'seq', None)), 0.6, None, flow_id, ts, provenance))
+                                mss = int.from_bytes(val[:2], 'big')
                             except Exception:
                                 pass
+                        if kind == 3 and len(val) >= 1:
                             try:
-                                ece = bool(flags & dpkt.tcp.TH_ECE)
-                                cwr = bool(flags & dpkt.tcp.TH_CWR)
-                                queue.append(make_evidence('tcp_extractor', 'tcp', 'tcp.ecn', {'ece': ece, 'cwr': cwr}, 0.5, None, flow_id, ts, provenance))
+                                wscale = val[0]
                             except Exception:
                                 pass
+                        if kind == 8:
+                            ts_present = True
+                        i += length
+
+                    provenance = {"live": True}
+                    try:
+                        queue.append(make_evidence('tcp_extractor', 'tcp', 'tcp.opts_order', opt_kinds, 0.6, None, flow_id, ts, provenance))
+                        queue.append(make_evidence('tcp_extractor', 'ip', 'ip.ttl', getattr(ip, 'ttl', None), 0.5, None, flow_id, ts, provenance))
+                        queue.append(make_evidence('tcp_extractor', 'tcp', 'tcp.window_size', getattr(tcp, 'win', None), 0.5, None, flow_id, ts, provenance))
+                        if mss is not None:
+                            queue.append(make_evidence('tcp_extractor', 'tcp', 'tcp.mss', mss, 0.7, None, flow_id, ts, provenance))
+                        if wscale is not None:
+                            queue.append(make_evidence('tcp_extractor', 'tcp', 'tcp.wscale', wscale, 0.7, None, flow_id, ts, provenance))
+                        if ts_present:
+                            queue.append(make_evidence('tcp_extractor', 'tcp', 'tcp.ts_present', True, 0.7, None, flow_id, ts, provenance))
+                        try:
+                            queue.append(make_evidence('tcp_extractor', 'tcp', 'tcp.isn', int(getattr(tcp, 'seq', None)), 0.6, None, flow_id, ts, provenance))
                         except Exception:
                             pass
-            except Exception:
-                pass
+                        try:
+                            ece = bool(flags & dpkt.tcp.TH_ECE)
+                            cwr = bool(flags & dpkt.tcp.TH_CWR)
+                            queue.append(make_evidence('tcp_extractor', 'tcp', 'tcp.ecn', {'ece': ece, 'cwr': cwr}, 0.5, None, flow_id, ts, provenance))
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+        except Exception:
+            pass
         collected += 1
         # if we've hit max_packets, request sniffer stop (handled in outer loop)
         try:

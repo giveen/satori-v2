@@ -59,6 +59,19 @@ def _evidence_confidence_for_trait(trait: str, host: Dict[str, Any]) -> float:
         return float((host.get('tcp_fingerprint') or {}).get('confidence') or 0.0)
     if proto == 'ssh':
         return float((host.get('ssh_fingerprint') or {}).get('confidence') or 0.0)
+    # For DHCP/DNS/NTP traits, look for matching protocol evidence and use its confidence_hint
+    if proto in ('dhcp', 'dns', 'ntp'):
+        prefix = proto + '.'
+        best = 0.0
+        for ev in host.get('evidence', []) or []:
+            if not isinstance(ev, dict):
+                continue
+            attr = str(ev.get('attribute') or '')
+            if attr.startswith(prefix):
+                ch = float(ev.get('confidence_hint') or 0.3)
+                if ch > best:
+                    best = ch
+        return best if best > 0.0 else 0.0
     # default weak confidence
     return 0.0
 
@@ -96,13 +109,85 @@ def score_host(traits: List[str], host: Dict[str, Any], sig_table: Dict[str, Any
     ambiguity_penalties = sig_table.get('ambiguity_penalties', {})
     baseline_threshold = float(sig_table.get('baseline_threshold', 0.1))
 
-    # precompute max_possible_score per OS from signature table
+    # Build per-protocol max evidence confidence for this host.
+    # This ensures max_possible reflects only evidence actually available —
+    # a DHCP-only host should not be penalised by un-observable TCP/SSH traits.
+    proto_max_conf: dict = {}
+    tcp_fp_conf = float((host.get('tcp_fingerprint') or {}).get('confidence') or 0.0)
+    ssh_fp_conf = float((host.get('ssh_fingerprint') or {}).get('confidence') or 0.0)
+    for _ev in (host.get('evidence') or []):
+        if not isinstance(_ev, dict):
+            continue
+        _attr = str(_ev.get('attribute') or '')
+        for _pfx in ('tcp', 'ssh', 'dhcp', 'dns', 'ntp'):
+            if _attr.startswith(_pfx + '.'):
+                _ch = float(_ev.get('confidence_hint') or 0.3)
+                if _ch > proto_max_conf.get(_pfx, 0.0):
+                    proto_max_conf[_pfx] = _ch
+                break
+    # Add TCP/SSH fingerprint confidence only when there is corroborating evidence
+    # (prevents stub/default fingerprint skeletons from inflating max_possible).
+    if tcp_fp_conf > 0 and 'tcp' in proto_max_conf:
+        proto_max_conf['tcp'] = max(proto_max_conf['tcp'], tcp_fp_conf)
+    elif tcp_fp_conf > 0.3:
+        # fingerprint confidence high enough to be a real signal even without raw ev
+        proto_max_conf['tcp'] = tcp_fp_conf
+    if ssh_fp_conf > 0 and 'ssh' in proto_max_conf:
+        proto_max_conf['ssh'] = max(proto_max_conf['ssh'], ssh_fp_conf)
+    elif ssh_fp_conf > 0.2:
+        proto_max_conf['ssh'] = ssh_fp_conf
+
+    # Compute max_possible per OS as the sum of the BEST possible score from
+    # each exclusive trait group (TTL, window, wscale, opts, ts, plus SSH and
+    # DHCP traits). This prevents dividing by a number impossible to achieve
+    # in a single host, and is constrained to only observed groups.
+    _EXCLUSIVE_GROUPS = {
+        "tcp:ttl": [], "tcp:window": [], "tcp:wscale": [], "tcp:opts": [],
+        "tcp:ts": [], "tcp:mss": [], "ssh:kex": [], "ssh:hostkey": [],
+        "ssh:cipher": [], "dhcp:prl": [], "dhcp:vendor": [],
+    }
+    # Reset and do proper accumulation with group-max logic
     max_possible = {osn: 0.0 for osn in os_list}
+    # Determine which exclusive groups are actually represented in the observed
+    # trait list so that unobserved groups don't inflate the max_possible
+    # denominator and unfairly penalise OSes with richer signature coverage.
+    observed_groups: set = set()
+    for t in traits:
+        for _pfx in _EXCLUSIVE_GROUPS:
+            if t.startswith(_pfx + ":") or t == _pfx:
+                observed_groups.add(_pfx)
+                break
+    group_bests: dict = {}  # (osn, group) -> best_contribution
     for trait, info in sig_table.get('traits', {}).items():
         proto = _protocol_of_trait(trait)
         pw = float(protocol_weights.get(proto, 1.0))
+        # Scale by the maximum achievable evidence confidence for this protocol.
+        # Traits from protocols with no evidence have eff_conf=0 and do not
+        # inflate the denominator used for normalisation.
+        eff_conf = proto_max_conf.get(proto, 0.0)
+        if eff_conf <= 0.0:
+            continue  # protocol not observed — skip for max_possible
+        group = None
+        for prefix in _EXCLUSIVE_GROUPS:
+            if trait.startswith(prefix + ":") or trait == prefix:
+                group = prefix
+                break
+        # For exclusive groups, only include if that group was actually observed —
+        # this prevents well-characterised OSes (many signatures) from having
+        # inflated max_possible relative to simpler ones.
+        if group is not None and group not in observed_groups:
+            continue
         for osn, strength in sorted(info.get('matches', {}).items()):
-            max_possible[osn] += float(strength) * pw
+            contrib = float(strength) * pw * eff_conf
+            if group is not None:
+                key = (osn, group)
+                if contrib > group_bests.get(key, 0.0):
+                    group_bests[key] = contrib
+            else:
+                max_possible[osn] += contrib
+    # Add group-best contributions to max_possible
+    for (osn, group), best in group_bests.items():
+        max_possible[osn] = max_possible.get(osn, 0.0) + best
 
     # compute raw scores
     raw_scores = {osn: 0.0 for osn in os_list}
@@ -126,9 +211,30 @@ def score_host(traits: List[str], host: Dict[str, Any], sig_table: Dict[str, Any
                 traits_used[osn].append((trait, contrib))
 
     # normalize and apply coverage/ambiguity
-    results = {}
-    protocol_count = int(host.get('protocol_count') or len(host.get('protocols_seen') or []))
-    coverage_factor = min(1.0, 0.25 + 0.75 * min(protocol_count / 3.0, 1.0))
+    # Infer protocol coverage from evidence attributes (host.protocol_count may be absent)
+    evidence_protos = set()
+    for ev in (host.get('evidence') or []):
+        attr = str(ev.get('attribute') or '')
+        if attr.startswith('tcp.') or attr.startswith('ip.'):
+            evidence_protos.add('tcp')
+        elif attr.startswith('ssh.'):
+            evidence_protos.add('ssh')
+        elif attr.startswith('dhcp.'):
+            evidence_protos.add('dhcp')
+        elif attr.startswith('dns.'):
+            evidence_protos.add('dns')
+        elif attr.startswith('ntp.'):
+            evidence_protos.add('ntp')
+    if (host.get('tcp_fingerprint') or {}).get('confidence', 0.0) > 0.25:
+        evidence_protos.add('tcp')
+    if (host.get('ssh_fingerprint') or {}).get('confidence', 0.0) > 0.2:
+        evidence_protos.add('ssh')
+
+    protocol_count = max(
+        int(host.get('protocol_count') or len(host.get('protocols_seen') or [])),
+        len(evidence_protos),
+    )
+    coverage_factor = min(1.0, 0.3 + 0.7 * min(protocol_count / 2.0, 1.0))
     # incorporate evidence_density optionally (small boost) — deterministic
     evidence_density = float(host.get('evidence_density') or 0.0)
     # scale density via arctan-like bounded function; here simple clamp
@@ -144,6 +250,7 @@ def score_host(traits: List[str], host: Dict[str, Any], sig_table: Dict[str, Any
         total_amb_pen += float(ambiguity_penalties.get('shared_ip', 0.0))
     total_amb_pen = min(total_amb_pen, 1.0)
 
+    results = {}
     for osn in os_list:
         raw = raw_scores.get(osn, 0.0)
         maxp = max_possible.get(osn, 0.0)

@@ -111,7 +111,7 @@ def build_parser():
     a.add_argument("--out-historical-summary", help=argparse.SUPPRESS, dest="out_summary_5", metavar="FILE")
     a.add_argument("--historical", action="store_true", dest="phase5_historical", help="Produce historical summaries")
     a.add_argument("--out-historical-metrics", help=argparse.SUPPRESS, dest="out_metrics_5", metavar="FILE")
-    a.add_argument("--anomalies", action="store_true", dest="phase7_anomalies", help="Run anomaly detection on hosts")
+    a.add_argument("--anomalies", "--phase7-anomalies", action="store_true", dest="phase7_anomalies", help="Run anomaly detection on hosts")
     a.add_argument("--out-anomalies", help=argparse.SUPPRESS, metavar="FILE")
     a.add_argument("--alerts", action="store_true", help="Enable alert generation")
     a.add_argument("--out-alerts", help="Path to write alerts JSON (defaults to stdout)", metavar="FILE")
@@ -425,173 +425,189 @@ def main(argv=None):
                     pass
                 # otherwise fall through to offline processing if pcap provided
         
-            # Minimal pipeline: ingest -> parse -> flow engine -> report counts
-            if not live_mode_used:
-            
-                from .ingest import iter_packets
-                from .packet import parse_raw
-                from .flow import FlowEngine
+        # Minimal pipeline: ingest -> parse -> flow engine -> report counts
+        if not live_mode_used:
+        
+            from .ingest import iter_packets
+            from .packet import parse_raw
+            from .flow import FlowEngine
 
-                fe = FlowEngine()
-                pkt_count = 0
-                parsed_count = 0
-                for ts, raw in iter_packets(args.pcap):
-                    pkt_count += 1
-                    meta = parse_raw(ts, raw)
-                    if meta is None:
-                        continue
-                    parsed_count += 1
-                    fe.ingest_packet(meta)
+            fe = FlowEngine()
+            pkt_count = 0
+            parsed_count = 0
+            for ts, raw in iter_packets(args.pcap):
+                pkt_count += 1
+                meta = parse_raw(ts, raw)
+                if meta is None:
+                    continue
+                parsed_count += 1
+                fe.ingest_packet(meta)
 
-                flows = list(fe.flows())
-                log.info("Read %d packets, parsed %d, flows %d", pkt_count, parsed_count, len(flows))
+            flows = list(fe.flows())
+            log.info("Read %d packets, parsed %d, flows %d", pkt_count, parsed_count, len(flows))
 
-                # Derive ISN heuristics and include in structured output
-                try:
-                    from .extractors.tcp_heuristics import derive_isn_heuristics
+            # Derive ISN heuristics and include in structured output
+            try:
+                from .extractors.tcp_heuristics import derive_isn_heuristics
 
-                    heuristics = derive_isn_heuristics(flows)
-                except Exception:
-                    heuristics = []
+                heuristics = derive_isn_heuristics(flows)
+            except Exception:
+                heuristics = []
 
-                # Build HostRegistry from observed packets
-                from .host import HostRegistry
+            # Build HostRegistry from observed packets
+            from .host import HostRegistry
 
-                registry = HostRegistry()
-                # register packets (ips/mac)
-                for f in flows:
-                    for pkt in f.packets:
-                        # pkt is PacketMeta with src_ip/src_mac/dst_ip/dst_mac
-                        try:
-                            registry.get_or_create(pkt.src_ip, pkt.src_mac.hex() if pkt.src_mac else None, pkt.ts)
-                        except Exception:
-                            pass
-                        try:
-                            registry.get_or_create(pkt.dst_ip, pkt.dst_mac.hex() if pkt.dst_mac else None, pkt.ts)
-                        except Exception:
-                            pass
-
-                # Collect extractor outputs into evidence buckets (legacy) while routing normalized evidence to hosts
-                evidence = {"tcp": {"isn_heuristics": heuristics}, "dhcp": [], "dns": [], "ntp": [], "ssh": []}
-                hosts_output = [] if not live_mode_used else hosts_output
-
-                try:
-                    from .extractors.dhcp import extract_from_flow as dhcp_extract
-                except Exception:
-                    dhcp_extract = None
-
-                try:
-                    from .extractors.dns import extract_from_flow as dns_extract
-                except Exception:
-                    dns_extract = None
-
-                try:
-                    from .extractors.ntp import extract_from_flow as ntp_extract
-                except Exception:
-                    ntp_extract = None
-
-                try:
-                    from .extractors.ssh import extract_from_flow as ssh_extract
-                except Exception:
-                    ssh_extract = None
-
-                # helper to route normalized evidence into hosts
-                def route_norm_list(norm_list, fallback_ip, flow_id):
-                    for ne in norm_list:
-                        # determine host by host_id or fallback ip
-                        hid = ne.get("host_id")
-                        target = None
-                        if hid:
-                            # search host by id
-                            for h in registry.all_hosts():
-                                if h.host_id == hid:
-                                    target = h
-                                    break
-                        if target is None:
-                            h = registry.get_or_create(fallback_ip)
-                            target = h
-                        target.add_evidence(ne)
-
-                for f in flows:
-                    if dhcp_extract:
-                        try:
-                            out = dhcp_extract(f) or []
-                            evidence["dhcp"].extend(out)
-                            for it in out:
-                                norm = it.get("evidence_norm")
-                                host_ip = it.get("host_ip") or f.src_ip
-                                if norm:
-                                    route_norm_list(norm, host_ip, f.flow_id)
-                        except Exception:
-                            pass
-                    if dns_extract:
-                        try:
-                            out = dns_extract(f) or []
-                            evidence["dns"].extend(out)
-                            for it in out:
-                                norm = it.get("evidence_norm")
-                                host_ip = it.get("host_ip") or f.src_ip
-                                if norm:
-                                    route_norm_list(norm, host_ip, f.flow_id)
-                        except Exception:
-                            pass
-                    if ntp_extract:
-                        try:
-                            out = ntp_extract(f) or []
-                            evidence["ntp"].extend(out)
-                            for it in out:
-                                norm = it.get("evidence_norm")
-                                host_ip = it.get("host_ip") or f.src_ip
-                                if norm:
-                                    route_norm_list(norm, host_ip, f.flow_id)
-                        except Exception:
-                            pass
-                    if ssh_extract:
-                        try:
-                            out = ssh_extract(f) or []
-                            evidence["ssh"].extend(out)
-                            for it in out:
-                                norm = it.get("evidence_norm")
-                                # legacy ssh uses host_ip field at top-level
-                                host_ip = it.get("host_ip") or f.src_ip
-                                if norm:
-                                    route_norm_list(norm, host_ip, f.flow_id)
-                        except Exception:
-                            pass
-
-                # build hosts output
-                for h in registry.all_hosts():
+            registry = HostRegistry()
+            # register packets (ips/mac)
+            for f in flows:
+                for pkt in f.packets:
+                    # pkt is PacketMeta with src_ip/src_mac/dst_ip/dst_mac
                     try:
-                        from .tcp_fingerprint import build_tcp_fingerprint
-
-                        h.tcp_fingerprint = build_tcp_fingerprint(h)
+                        registry.get_or_create(pkt.src_ip, pkt.src_mac.hex() if pkt.src_mac else None, pkt.ts)
                     except Exception:
-                        h.tcp_fingerprint = None
+                        pass
                     try:
-                        from .ssh_fingerprint import build_ssh_fingerprint
-
-                        h.ssh_fingerprint = build_ssh_fingerprint(h)
+                        registry.get_or_create(pkt.dst_ip, pkt.dst_mac.hex() if pkt.dst_mac else None, pkt.ts)
                     except Exception:
-                        h.ssh_fingerprint = None
+                        pass
+
+            # Collect extractor outputs into evidence buckets (legacy) while routing normalized evidence to hosts
+            evidence = {"tcp": {"isn_heuristics": heuristics}, "dhcp": [], "dns": [], "ntp": [], "ssh": []}
+            hosts_output = [] if not live_mode_used else hosts_output
+
+            try:
+                from .extractors.dhcp import extract_from_flow as dhcp_extract
+            except Exception:
+                dhcp_extract = None
+
+            try:
+                from .extractors.dns import extract_from_flow as dns_extract
+            except Exception:
+                dns_extract = None
+
+            try:
+                from .extractors.ntp import extract_from_flow as ntp_extract
+            except Exception:
+                ntp_extract = None
+
+            try:
+                from .extractors.ssh import extract_from_flow as ssh_extract
+            except Exception:
+                ssh_extract = None
+
+            try:
+                from .extractors.tcp import extract_from_flow as tcp_extract_offline
+            except Exception:
+                tcp_extract_offline = None
+
+            # helper to route normalized evidence into hosts
+            def route_norm_list(norm_list, fallback_ip, flow_id):
+                for ne in norm_list:
+                    # determine host by host_id or fallback ip
+                    hid = ne.get("host_id")
+                    target = None
+                    if hid:
+                        # search host by id
+                        for h in registry.all_hosts():
+                            if h.host_id == hid:
+                                target = h
+                                break
+                    if target is None:
+                        h = registry.get_or_create(fallback_ip)
+                        target = h
+                    target.add_evidence(ne)
+
+            for f in flows:
+                if dhcp_extract:
                     try:
-                        from .ssh_os_hint import build_ssh_os_hint
-
-                        h.ssh_os_hint = build_ssh_os_hint(h)
+                        out = dhcp_extract(f) or []
+                        evidence["dhcp"].extend(out)
+                        for it in out:
+                            norm = it.get("evidence_norm")
+                            host_ip = it.get("host_ip") or f.src_ip
+                            if norm:
+                                route_norm_list(norm, host_ip, f.flow_id)
                     except Exception:
-                        h.ssh_os_hint = None
-                    hosts_output.append({
-                        "host_id": h.host_id,
-                        "ips": sorted(list(h.ips)),
-                        "macs": sorted(list(h.macs)),
-                        "ambiguity": {k: v for k, v in h.ambiguity.items() if not k.startswith("_")},
-                        "first_seen": h.first_seen,
-                        "last_seen": h.last_seen,
-                        "evidence": h.evidence,
-                        "tcp_fingerprint": (h.tcp_fingerprint.__dict__ if h.tcp_fingerprint is not None else None),
-                        "ssh_fingerprint": (h.ssh_fingerprint.__dict__ if h.ssh_fingerprint is not None else None),
-                        "ssh_os_hint": ([dataclasses.asdict(x) for x in h.ssh_os_hint] if h.ssh_os_hint is not None else None),
-                        "flows": sorted(list(h.flows)),
-                    })
+                        pass
+                if dns_extract:
+                    try:
+                        out = dns_extract(f) or []
+                        evidence["dns"].extend(out)
+                        for it in out:
+                            norm = it.get("evidence_norm")
+                            host_ip = it.get("host_ip") or f.src_ip
+                            if norm:
+                                route_norm_list(norm, host_ip, f.flow_id)
+                    except Exception:
+                        pass
+                if ntp_extract:
+                    try:
+                        out = ntp_extract(f) or []
+                        evidence["ntp"].extend(out)
+                        for it in out:
+                            norm = it.get("evidence_norm")
+                            host_ip = it.get("host_ip") or f.src_ip
+                            if norm:
+                                route_norm_list(norm, host_ip, f.flow_id)
+                    except Exception:
+                        pass
+                if ssh_extract:
+                    try:
+                        out = ssh_extract(f) or []
+                        evidence["ssh"].extend(out)
+                        for it in out:
+                            norm = it.get("evidence_norm")
+                            # legacy ssh uses host_ip field at top-level
+                            host_ip = it.get("host_ip") or f.src_ip
+                            if norm:
+                                route_norm_list(norm, host_ip, f.flow_id)
+                    except Exception:
+                        pass
+                if tcp_extract_offline:
+                    try:
+                        out = tcp_extract_offline(f) or []
+                        for it in out:
+                            norm = it.get("evidence_norm")
+                            # TCP SYN comes from src_ip (the initiating host)
+                            host_ip = it.get("host_ip") or f.src_ip
+                            if norm:
+                                route_norm_list(norm, host_ip, f.flow_id)
+                    except Exception:
+                        pass
+
+            # build hosts output
+            for h in registry.all_hosts():
+                try:
+                    from .tcp_fingerprint import build_tcp_fingerprint
+
+                    h.tcp_fingerprint = build_tcp_fingerprint(h)
+                except Exception:
+                    h.tcp_fingerprint = None
+                try:
+                    from .ssh_fingerprint import build_ssh_fingerprint
+
+                    h.ssh_fingerprint = build_ssh_fingerprint(h)
+                except Exception:
+                    h.ssh_fingerprint = None
+                try:
+                    from .ssh_os_hint import build_ssh_os_hint
+
+                    h.ssh_os_hint = build_ssh_os_hint(h)
+                except Exception:
+                    h.ssh_os_hint = None
+                hosts_output.append({
+                    "host_id": h.host_id,
+                    "ips": sorted(list(h.ips)),
+                    "macs": sorted(list(h.macs)),
+                    "ambiguity": {k: v for k, v in h.ambiguity.items() if not k.startswith("_")},
+                    "first_seen": h.first_seen,
+                    "last_seen": h.last_seen,
+                    "evidence": h.evidence,
+                    "tcp_fingerprint": (h.tcp_fingerprint.__dict__ if h.tcp_fingerprint is not None else None),
+                    "ssh_fingerprint": (h.ssh_fingerprint.__dict__ if h.ssh_fingerprint is not None else None),
+                    "ssh_os_hint": ([dataclasses.asdict(x) for x in h.ssh_os_hint] if h.ssh_os_hint is not None else None),
+                    "flows": sorted(list(h.flows)),
+                })
 
         # Phase 2: produce os_inference for each host and Phase 3: aggregate and correlate
         try:

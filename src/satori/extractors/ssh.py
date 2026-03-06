@@ -104,6 +104,31 @@ def _parse_kexinit(payload: bytes) -> t.Optional[dict]:
 
 
 def extract_from_flow(flow) -> list[dict]:
+    _SSH_PORTS = {22, 2222}
+
+    # First pass: determine if this is an SSH flow by port or banner content.
+    # This allows KEXINIT packets (which lack the "SSH-" marker) on non-standard
+    # ports to still be processed, as long as the flow is identified as SSH.
+    flow_is_ssh = (
+        getattr(flow, "src_port", 0) in _SSH_PORTS
+        or getattr(flow, "dst_port", 0) in _SSH_PORTS
+    )
+    if not flow_is_ssh:
+        for pkt in flow.packets:
+            if pkt.proto != 6:
+                continue
+            try:
+                eth = dpkt.ethernet.Ethernet(pkt.raw)
+                payload = getattr(eth.data.data, "data", b"") or b""
+                if b"SSH-" in payload[:128]:
+                    flow_is_ssh = True
+                    break
+            except Exception:
+                continue
+
+    if not flow_is_ssh:
+        return []
+
     evidence: list[dict] = []
     for idx, pkt in enumerate(flow.packets):
         if pkt.proto != 6:
@@ -113,10 +138,6 @@ def extract_from_flow(flow) -> list[dict]:
             ip = eth.data
             tcp = ip.data
         except Exception:
-            continue
-
-        # check for SSH port
-        if not (getattr(tcp, "sport", 0) == 22 or getattr(tcp, "dport", 0) == 22):
             continue
 
         payload = getattr(tcp, "data", b"") or b""

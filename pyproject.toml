@@ -7,8 +7,11 @@ authors = ["Satori Team <devnull@example.com>"]
 [tool.poetry.dependencies]
 python = "^3.11"
 dpkt = "^1.9.0"
-pcapng = "^0.23"
 lmdb = "^1.4"
+scapy = {version = ">=2.5", optional = true}
+
+[tool.poetry.extras]
+live = ["scapy"]
 
 [tool.poetry.dev-dependencies]
 pytest = "^7.0"

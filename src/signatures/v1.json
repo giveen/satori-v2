@@ -3,9 +3,9 @@
   "protocol_weights": {
     "tcp": 1.0,
     "ssh": 1.2,
-    "dhcp": 1.0,
-    "dns": 1.0,
-    "ntp": 1.0
+    "dhcp": 1.1,
+    "dns": 0.8,
+    "ntp": 0.7
   },
   "baseline_threshold": 0.1,
   "ambiguity_penalties": {
@@ -14,14 +14,563 @@
   },
   "traits": {
     "tcp:ttl:64": {
+      "comment": "Initial TTL 64 \u2014 Linux, macOS, FreeBSD, iOS, Android",
       "matches": {
-        "Ubuntu": 1.0,
-        "Debian": 0.9
+        "Linux": 0.5,
+        "Ubuntu": 0.5,
+        "Debian": 0.5,
+        "CentOS": 0.5,
+        "RHEL": 0.5,
+        "Alpine Linux": 0.5,
+        "macOS": 0.5,
+        "iOS": 0.4,
+        "FreeBSD": 0.5,
+        "OpenBSD": 0.5,
+        "Android": 0.4
       }
     },
-    "ssh:kex:curve25519-sha256@libssh.org": {
+    "tcp:ttl:128": {
+      "comment": "Initial TTL 128 \u2014 Windows",
       "matches": {
-        "Ubuntu": 0.8
+        "Windows": 0.9,
+        "Windows Server": 0.9
+      }
+    },
+    "tcp:ttl:255": {
+      "comment": "Initial TTL 255 \u2014 Cisco IOS, Solaris",
+      "matches": {
+        "Cisco IOS": 0.9,
+        "Solaris": 0.7
+      }
+    },
+    "tcp:ttl:32": {
+      "comment": "Initial TTL 32 \u2014 very old Windows 3.x/9x or embedded",
+      "matches": {
+        "Windows": 0.2
+      }
+    },
+    "tcp:wscale:7": {
+      "comment": "TCP window scale 7 (128x) \u2014 Linux default",
+      "matches": {
+        "Linux": 0.7,
+        "Ubuntu": 0.7,
+        "Debian": 0.7,
+        "CentOS": 0.6,
+        "RHEL": 0.6,
+        "Alpine Linux": 0.6
+      }
+    },
+    "tcp:wscale:8": {
+      "comment": "TCP window scale 8 (256x) \u2014 Windows 10/11, some Android",
+      "matches": {
+        "Windows": 0.7,
+        "Windows Server": 0.7,
+        "Android": 0.5
+      }
+    },
+    "tcp:wscale:6": {
+      "comment": "TCP window scale 6 (64x) \u2014 macOS, FreeBSD",
+      "matches": {
+        "macOS": 0.7,
+        "iOS": 0.5,
+        "FreeBSD": 0.6
+      }
+    },
+    "tcp:wscale:5": {
+      "comment": "TCP window scale 5 (32x) \u2014 older Windows, some embedded",
+      "matches": {
+        "Windows": 0.4
+      }
+    },
+    "tcp:wscale:10": {
+      "comment": "TCP window scale 10 (1024x) \u2014 newer Linux kernels with BDP tuning",
+      "matches": {
+        "Linux": 0.5,
+        "Ubuntu": 0.5,
+        "Debian": 0.4
+      }
+    },
+    "tcp:wscale:3": {
+      "comment": "TCP window scale 3 (8x) \u2014 iOS / older mobile stacks",
+      "matches": {
+        "iOS": 0.6,
+        "Android": 0.3
+      }
+    },
+    "tcp:opts:2_4_8_1_3": {
+      "comment": "TCP opts [MSS, SACK-OK, TS, NOP, WScale] \u2014 Linux standard order",
+      "matches": {
+        "Linux": 0.8,
+        "Ubuntu": 0.8,
+        "Debian": 0.8,
+        "CentOS": 0.7,
+        "RHEL": 0.7,
+        "Alpine Linux": 0.7,
+        "Android": 0.5
+      }
+    },
+    "tcp:opts:2_1_3_1_1_4": {
+      "comment": "TCP opts [MSS, NOP, WScale, NOP, NOP, SACK-OK] \u2014 Windows standard order",
+      "matches": {
+        "Windows": 0.8,
+        "Windows Server": 0.7
+      }
+    },
+    "tcp:opts:2_1_3_1_1_8_4": {
+      "comment": "TCP opts [MSS, NOP, WScale, NOP, NOP, TS, SACK-OK] \u2014 macOS standard order",
+      "matches": {
+        "macOS": 0.8,
+        "iOS": 0.6
+      }
+    },
+    "tcp:opts:2_4_5_1_3": {
+      "comment": "TCP opts [MSS, SACK-OK, TS-alt, NOP, WScale] \u2014 FreeBSD / OpenBSD variant",
+      "matches": {
+        "FreeBSD": 0.6,
+        "OpenBSD": 0.6
+      }
+    },
+    "tcp:ts:present": {
+      "comment": "TCP timestamps enabled \u2014 Linux, macOS, BSD (Windows disables by default)",
+      "matches": {
+        "Linux": 0.6,
+        "Ubuntu": 0.6,
+        "Debian": 0.6,
+        "CentOS": 0.5,
+        "RHEL": 0.5,
+        "Alpine Linux": 0.5,
+        "macOS": 0.5,
+        "FreeBSD": 0.5,
+        "OpenBSD": 0.5
+      }
+    },
+    "tcp:ts:absent": {
+      "comment": "TCP timestamps absent \u2014 Windows default, mobile stacks",
+      "matches": {
+        "Windows": 0.5,
+        "Windows Server": 0.5,
+        "iOS": 0.4,
+        "Android": 0.4
+      }
+    },
+    "tcp:window:29200": {
+      "comment": "TCP window 29200 \u2014 Linux kernel 3.x/4.x default",
+      "matches": {
+        "Linux": 0.7,
+        "Ubuntu": 0.7,
+        "Debian": 0.7,
+        "CentOS": 0.6,
+        "RHEL": 0.6
+      }
+    },
+    "tcp:window:64240": {
+      "comment": "TCP window 64240 \u2014 Linux kernel 5.x+ default and Windows 10/11 with autotuning",
+      "matches": {
+        "Linux": 0.7,
+        "Ubuntu": 0.7,
+        "Debian": 0.6,
+        "Alpine Linux": 0.5,
+        "Windows": 0.4,
+        "Windows Server": 0.35
+      }
+    },
+    "tcp:window:65535": {
+      "comment": "TCP window 65535 \u2014 macOS, iOS, FreeBSD, some Windows",
+      "matches": {
+        "macOS": 0.7,
+        "iOS": 0.6,
+        "FreeBSD": 0.6,
+        "OpenBSD": 0.6,
+        "Windows": 0.3,
+        "Android": 0.4
+      }
+    },
+    "tcp:window:8192": {
+      "comment": "TCP window 8192 \u2014 older Windows (XP/Vista/7 era)",
+      "matches": {
+        "Windows": 0.5
+      }
+    },
+    "tcp:window:16384": {
+      "comment": "TCP window 16384 \u2014 OpenBSD default, some Cisco",
+      "matches": {
+        "OpenBSD": 0.7,
+        "Cisco IOS": 0.4
+      }
+    },
+    "tcp:window:14600": {
+      "comment": "TCP window 14600 \u2014 Android / mobile Linux",
+      "matches": {
+        "Android": 0.6,
+        "Linux": 0.2
+      }
+    },
+    "tcp:window:65483": {
+      "comment": "TCP window 65483 \u2014 Linux loopback interface",
+      "matches": {
+        "Linux": 0.4,
+        "Ubuntu": 0.4
+      }
+    },
+    "tcp:mss:1460": {
+      "comment": "TCP MSS 1460 \u2014 standard Ethernet (low discriminating power, many OSes)",
+      "matches": {
+        "Linux": 0.3,
+        "Ubuntu": 0.3,
+        "Debian": 0.3,
+        "Windows": 0.3,
+        "macOS": 0.3,
+        "FreeBSD": 0.3,
+        "Android": 0.3
+      }
+    },
+    "tcp:mss:1452": {
+      "comment": "TCP MSS 1452 \u2014 PPPoE connections",
+      "matches": {
+        "Linux": 0.3,
+        "Windows": 0.3
+      }
+    },
+    "tcp:mss:65495": {
+      "comment": "TCP MSS 65495 \u2014 Linux loopback interface",
+      "matches": {
+        "Linux": 0.5,
+        "Ubuntu": 0.5
+      }
+    },
+    "ssh:kex:curve25519": {
+      "comment": "KEX curve25519-sha256 \u2014 OpenSSH 6.5+ (Ubuntu 14.04+, Debian 8+, macOS 10.13+, FreeBSD 10+)",
+      "matches": {
+        "Linux": 0.6,
+        "Ubuntu": 0.7,
+        "Debian": 0.7,
+        "CentOS": 0.4,
+        "RHEL": 0.4,
+        "Alpine Linux": 0.6,
+        "macOS": 0.6,
+        "FreeBSD": 0.6,
+        "OpenBSD": 0.7
+      }
+    },
+    "ssh:kex:ecdh": {
+      "comment": "KEX ecdh-sha2-nistp* \u2014 OpenSSH 5.7+ (moderate discriminating power)",
+      "matches": {
+        "Linux": 0.4,
+        "Ubuntu": 0.4,
+        "Debian": 0.4,
+        "macOS": 0.4,
+        "FreeBSD": 0.4,
+        "CentOS": 0.4,
+        "RHEL": 0.5
+      }
+    },
+    "ssh:kex:gss": {
+      "comment": "KEX gss-* \u2014 Kerberos, Windows Active Directory SSH environments",
+      "matches": {
+        "Windows Server": 0.7,
+        "Linux": 0.2
+      }
+    },
+    "ssh:hostkey:ed25519": {
+      "comment": "Host key ed25519 \u2014 OpenSSH 6.5+; default on modern Linux/BSD",
+      "matches": {
+        "Linux": 0.6,
+        "Ubuntu": 0.8,
+        "Debian": 0.8,
+        "Alpine Linux": 0.7,
+        "FreeBSD": 0.6,
+        "OpenBSD": 0.9,
+        "macOS": 0.5,
+        "CentOS": 0.3
+      }
+    },
+    "ssh:hostkey:ecdsa_sha2_nistp256": {
+      "comment": "Host key ecdsa-p256 \u2014 common on RHEL/CentOS and macOS",
+      "matches": {
+        "Linux": 0.5,
+        "Ubuntu": 0.5,
+        "Debian": 0.5,
+        "CentOS": 0.7,
+        "RHEL": 0.7,
+        "macOS": 0.5,
+        "FreeBSD": 0.4
+      }
+    },
+    "ssh:hostkey:ecdsa_sha2_nistp384": {
+      "comment": "Host key ecdsa-p384 \u2014 less common, FIPS-mode RHEL/Fedora",
+      "matches": {
+        "RHEL": 0.5,
+        "CentOS": 0.4,
+        "Linux": 0.3
+      }
+    },
+    "ssh:hostkey:rsa": {
+      "comment": "Host key ssh-rsa \u2014 universal; low discriminating power",
+      "matches": {
+        "Linux": 0.3,
+        "Ubuntu": 0.3,
+        "Debian": 0.3,
+        "CentOS": 0.5,
+        "RHEL": 0.5,
+        "Windows Server": 0.4,
+        "macOS": 0.3,
+        "FreeBSD": 0.3
+      }
+    },
+    "ssh:hostkey:rsa_sha2_256": {
+      "comment": "Host key rsa-sha2-256 \u2014 OpenSSH 8.x+ server-sig-alg negotiation",
+      "matches": {
+        "Ubuntu": 0.5,
+        "Debian": 0.5,
+        "Linux": 0.5,
+        "macOS": 0.4
+      }
+    },
+    "ssh:hostkey:dss": {
+      "comment": "Host key ssh-dss \u2014 deprecated DSA; only old / unpatched systems",
+      "matches": {
+        "Linux": 0.2,
+        "CentOS": 0.3
+      }
+    },
+    "ssh:cipher:chacha20_poly1305": {
+      "comment": "Cipher chacha20-poly1305@openssh.com \u2014 OpenSSH 6.5+ default on Linux/macOS",
+      "matches": {
+        "Linux": 0.7,
+        "Ubuntu": 0.7,
+        "Debian": 0.7,
+        "Alpine Linux": 0.6,
+        "macOS": 0.6,
+        "FreeBSD": 0.5,
+        "OpenBSD": 0.7
+      }
+    },
+    "ssh:cipher:aes128_gcm": {
+      "comment": "Cipher aes128-gcm@openssh.com \u2014 OpenSSH 6.2+",
+      "matches": {
+        "Linux": 0.4,
+        "Ubuntu": 0.5,
+        "Debian": 0.4,
+        "macOS": 0.5,
+        "FreeBSD": 0.3
+      }
+    },
+    "ssh:cipher:aes256_gcm": {
+      "comment": "Cipher aes256-gcm@openssh.com \u2014 OpenSSH 6.2+",
+      "matches": {
+        "Linux": 0.4,
+        "Ubuntu": 0.4,
+        "macOS": 0.5
+      }
+    },
+    "ssh:cipher:aes256_ctr": {
+      "comment": "Cipher aes256-ctr \u2014 universal, prominent on servers/RHEL/CentOS",
+      "matches": {
+        "Linux": 0.3,
+        "Ubuntu": 0.3,
+        "Windows Server": 0.3,
+        "CentOS": 0.4,
+        "RHEL": 0.4
+      }
+    },
+    "ssh:cipher:3des_cbc": {
+      "comment": "Cipher 3des-cbc \u2014 legacy; common on old Windows SSH or unpatched systems",
+      "matches": {
+        "Windows Server": 0.5,
+        "Linux": 0.1
+      }
+    },
+    "dhcp:vendor:msft_5_0": {
+      "comment": "DHCP vendor class 'MSFT 5.0' \u2014 Windows exclusive identifier",
+      "matches": {
+        "Windows": 1.0,
+        "Windows Server": 0.8
+      }
+    },
+    "dhcp:vendor:android_dhcp": {
+      "comment": "DHCP vendor class android-dhcp-* \u2014 Android devices",
+      "matches": {
+        "Android": 0.9
+      }
+    },
+    "dhcp:vendor:udhcp": {
+      "comment": "DHCP vendor class udhcp/udhcpd \u2014 embedded Linux (OpenWRT, BusyBox)",
+      "matches": {
+        "Alpine Linux": 0.5,
+        "Linux": 0.3
+      }
+    },
+    "tcp:opts:2_1_1_4": {
+      "comment": "TCP opts [MSS, NOP, NOP, SACK-OK] \u2014 Windows XP/2003/2008 standard, older Linux without timestamps",
+      "matches": {
+        "Windows": 0.65,
+        "Windows Server": 0.55,
+        "Linux": 0.25,
+        "Ubuntu": 0.2,
+        "Debian": 0.2
+      }
+    },
+    "tcp:opts:2_1_1_4_1_3": {
+      "comment": "TCP opts [MSS, NOP, NOP, SACK-OK, NOP, WScale] \u2014 Linux alternative opts ordering",
+      "matches": {
+        "Linux": 0.65,
+        "Ubuntu": 0.55,
+        "Debian": 0.55,
+        "CentOS": 0.45,
+        "RHEL": 0.45
+      }
+    },
+    "tcp:window:8760": {
+      "comment": "TCP window 8760 \u2014 Windows XP/2003 default initial window",
+      "matches": {
+        "Windows": 0.7,
+        "Windows Server": 0.6
+      }
+    },
+    "tcp:window:5840": {
+      "comment": "TCP window 5840 \u2014 Linux kernel 2.x default initial window",
+      "matches": {
+        "Linux": 0.65,
+        "Ubuntu": 0.5,
+        "Debian": 0.5,
+        "CentOS": 0.4,
+        "RHEL": 0.4
+      }
+    },
+    "dhcp:prl:0103062a": {
+      "comment": "DHCP PRL 01,03,06,2a (subnet,router,dns,ntp) \u2014 Linux dhclient minimal",
+      "matches": {
+        "Linux": 0.7,
+        "Ubuntu": 0.6,
+        "Debian": 0.65,
+        "CentOS": 0.55,
+        "RHEL": 0.55
+      }
+    },
+    "dhcp:prl:0103060f1c2a": {
+      "comment": "DHCP PRL extended Linux dhclient (subnet,router,dns,domain,broadcast,ntp)",
+      "matches": {
+        "Linux": 0.7,
+        "Ubuntu": 0.65,
+        "Debian": 0.65
+      }
+    },
+    "dhcp:prl:0103060f1f212bc2c2e2f77": {
+      "comment": "DHCP PRL Windows Vista/7/8/10 typical parameter request list",
+      "matches": {
+        "Windows": 0.85,
+        "Windows Server": 0.7
+      }
+    },
+    "dhcp:prl:011c020306770c2c2f1a792a": {
+      "comment": "DHCP PRL macOS typical parameter request list",
+      "matches": {
+        "macOS": 0.85,
+        "iOS": 0.6
+      }
+    },
+    "dhcp:prl:0121033a3b": {
+      "comment": "DHCP PRL Android typical parameter request list",
+      "matches": {
+        "Android": 0.8
+      }
+    },
+    "ssh:hostkey:rsa_sha2_512": {
+      "comment": "Host key rsa-sha2-512 \u2014 OpenSSH 8.x+ upgrade-compat mode",
+      "matches": {
+        "Linux": 0.5,
+        "Ubuntu": 0.5,
+        "Debian": 0.5,
+        "CentOS": 0.4,
+        "RHEL": 0.4
+      }
+    },
+    "ssh:kex:dh_gex": {
+      "comment": "DH group exchange (RFC 4419) \u2014 negotiate large DH group; modern OpenSSH default fallback",
+      "matches": {
+        "Linux": 0.5,
+        "Ubuntu": 0.5,
+        "Debian": 0.5,
+        "CentOS": 0.5,
+        "RHEL": 0.5,
+        "Alpine Linux": 0.4,
+        "FreeBSD": 0.4,
+        "macOS": 0.3
+      }
+    },
+    "ssh:kex:dh_group14": {
+      "comment": "DH group 14 (2048-bit) \u2014 preferred on RHEL/CentOS; also Windows OpenSSH",
+      "matches": {
+        "CentOS": 0.7,
+        "RHEL": 0.7,
+        "Linux": 0.4,
+        "Ubuntu": 0.4,
+        "Debian": 0.3,
+        "Windows Server": 0.5,
+        "Windows": 0.4
+      }
+    },
+    "ssh:kex:dh_group1": {
+      "comment": "DH group 1 (1024-bit, legacy) \u2014 old OpenSSH/Cisco; deprecated in modern systems",
+      "matches": {
+        "Cisco IOS": 0.7,
+        "Linux": 0.2,
+        "CentOS": 0.4,
+        "RHEL": 0.4
+      }
+    },
+    "ssh:banner:openssh": {
+      "comment": "OpenSSH server without distro-specific build tag",
+      "matches": {
+        "Linux": 0.4,
+        "Ubuntu": 0.3,
+        "Debian": 0.3,
+        "CentOS": 0.3,
+        "RHEL": 0.3,
+        "macOS": 0.3,
+        "FreeBSD": 0.4
+      }
+    },
+    "ssh:banner:openssh_ubuntu": {
+      "comment": "OpenSSH built against Ubuntu packaging (distro suffix in banner)",
+      "matches": {
+        "Ubuntu": 0.9,
+        "Debian": 0.3
+      }
+    },
+    "ssh:banner:openssh_debian": {
+      "comment": "OpenSSH built against Debian packaging",
+      "matches": {
+        "Debian": 0.9,
+        "Ubuntu": 0.3
+      }
+    },
+    "ssh:banner:openssh_freebsd": {
+      "comment": "OpenSSH FreeBSD port",
+      "matches": {
+        "FreeBSD": 0.9,
+        "OpenBSD": 0.3
+      }
+    },
+    "ssh:banner:dropbear": {
+      "comment": "Dropbear SSH \u2014 lightweight server common on embedded Linux",
+      "matches": {
+        "Alpine Linux": 0.7,
+        "Android": 0.4,
+        "Linux": 0.3
+      }
+    },
+    "ssh:banner:cisco": {
+      "comment": "Cisco IOS SSH server",
+      "matches": {
+        "Cisco IOS": 0.95
+      }
+    },
+    "ssh:banner:libssh": {
+      "comment": "libssh \u2014 used in Python paramiko, Ansible, various applications",
+      "matches": {
+        "Linux": 0.3,
+        "macOS": 0.3
       }
     }
   }
