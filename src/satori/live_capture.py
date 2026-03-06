@@ -149,6 +149,20 @@ def _yield_from_pcap(pcap_file: str, max_packets: Optional[int] = None) -> Gener
     except Exception:
         pass
 
+    # Third pass: run TLS extractor to compute JA3 fingerprints from ClientHellos.
+    try:
+        from .extractors.tls import extract_from_flow as _tls_extract
+        for flow in fe.flows():
+            try:
+                tls_items = _tls_extract(flow) or []
+                for item in tls_items:
+                    for ev_norm in (item.get("evidence_norm") or []):
+                        yield ev_norm
+            except Exception:
+                pass
+    except Exception:
+        pass
+
 def _sniff_live(interface: str, bpf_filter: Optional[str], max_packets: Optional[int], timeout: Optional[float]):
     try:
         from scapy.all import AsyncSniffer

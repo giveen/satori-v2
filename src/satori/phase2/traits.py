@@ -373,6 +373,23 @@ def _extract_dns_ntp_traits(host: Dict[str, Any]) -> List[Tuple[str, bool, str]]
     return traits
 
 
+def _extract_tls_traits(host: Dict[str, Any]) -> List[Tuple[str, bool, str]]:
+    """Extract TLS/JA3 traits from host evidence.
+
+    Looks for ``tls.ja3`` evidence attributes and emits ``tls:ja3:{hash}`` traits.
+    """
+    traits = []
+    for ev in host.get("evidence", []) or []:
+        if not isinstance(ev, dict):
+            continue
+        attr = ev.get("attribute") or ""
+        if attr == "tls.ja3":
+            val = ev.get("value")
+            if isinstance(val, str) and len(val) == 32 and all(c in "0123456789abcdef" for c in val):
+                traits.append((f"tls:ja3:{val}", False, evidence_sha1(ev)))
+    return traits
+
+
 def extract_traits(host: Dict[str, Any]) -> List[str]:
     """Extract a sorted list of normalized trait strings from a Phase 1 host dict.
 
@@ -388,6 +405,7 @@ def extract_traits(host: Dict[str, Any]) -> List[str]:
     traits_with_meta.extend(_extract_ssh_traits(ssh, evidence))
     traits_with_meta.extend(_extract_dhcp_traits(host))
     traits_with_meta.extend(_extract_dns_ntp_traits(host))
+    traits_with_meta.extend(_extract_tls_traits(host))
 
     # Deduplicate by trait key; keep first baseline flag True if any
     seen = {}

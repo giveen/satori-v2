@@ -34,6 +34,8 @@ def _protocol_of_trait(trait: str) -> str:
         return 'dns'
     if trait.startswith('ntp:'):
         return 'ntp'
+    if trait.startswith('tls:'):
+        return 'tls'
     return 'other'
 
 
@@ -59,8 +61,8 @@ def _evidence_confidence_for_trait(trait: str, host: Dict[str, Any]) -> float:
         return float((host.get('tcp_fingerprint') or {}).get('confidence') or 0.0)
     if proto == 'ssh':
         return float((host.get('ssh_fingerprint') or {}).get('confidence') or 0.0)
-    # For DHCP/DNS/NTP traits, look for matching protocol evidence and use its confidence_hint
-    if proto in ('dhcp', 'dns', 'ntp'):
+    # For DHCP/DNS/NTP/TLS traits, look for matching protocol evidence and use its confidence_hint
+    if proto in ('dhcp', 'dns', 'ntp', 'tls'):
         prefix = proto + '.'
         best = 0.0
         for ev in host.get('evidence', []) or []:
@@ -119,7 +121,7 @@ def score_host(traits: List[str], host: Dict[str, Any], sig_table: Dict[str, Any
         if not isinstance(_ev, dict):
             continue
         _attr = str(_ev.get('attribute') or '')
-        for _pfx in ('tcp', 'ssh', 'dhcp', 'dns', 'ntp'):
+        for _pfx in ('tcp', 'ssh', 'dhcp', 'dns', 'ntp', 'tls'):
             if _attr.startswith(_pfx + '.'):
                 _ch = float(_ev.get('confidence_hint') or 0.3)
                 if _ch > proto_max_conf.get(_pfx, 0.0):
@@ -225,6 +227,8 @@ def score_host(traits: List[str], host: Dict[str, Any], sig_table: Dict[str, Any
             evidence_protos.add('dns')
         elif attr.startswith('ntp.'):
             evidence_protos.add('ntp')
+        elif attr.startswith('tls.'):
+            evidence_protos.add('tls')
     if (host.get('tcp_fingerprint') or {}).get('confidence', 0.0) > 0.25:
         evidence_protos.add('tcp')
     if (host.get('ssh_fingerprint') or {}).get('confidence', 0.0) > 0.2:

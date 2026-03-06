@@ -211,7 +211,7 @@ def main(argv=None):
         parsed_count = 0
         flows = []
         heuristics = []
-        evidence = {"tcp": {"isn_heuristics": []}, "dhcp": [], "dns": [], "ntp": [], "ssh": []}
+        evidence = {"tcp": {"isn_heuristics": []}, "dhcp": [], "dns": [], "ntp": [], "ssh": [], "tls": []}
         # If live or pcap-file mode requested, reuse capture_live + feed_live_evidence
         live_requested = bool(getattr(args, 'live', False) or getattr(args, 'pcap_file', None))
         if live_requested:
@@ -472,7 +472,7 @@ def main(argv=None):
                         pass
 
             # Collect extractor outputs into evidence buckets (legacy) while routing normalized evidence to hosts
-            evidence = {"tcp": {"isn_heuristics": heuristics}, "dhcp": [], "dns": [], "ntp": [], "ssh": []}
+            evidence = {"tcp": {"isn_heuristics": heuristics}, "dhcp": [], "dns": [], "ntp": [], "ssh": [], "tls": []}
             hosts_output = [] if not live_mode_used else hosts_output
 
             try:
@@ -494,6 +494,11 @@ def main(argv=None):
                 from .extractors.ssh import extract_from_flow as ssh_extract
             except Exception:
                 ssh_extract = None
+
+            try:
+                from .extractors.tls import extract_from_flow as tls_extract
+            except Exception:
+                tls_extract = None
 
             try:
                 from .extractors.tcp import extract_from_flow as tcp_extract_offline
@@ -558,6 +563,17 @@ def main(argv=None):
                         for it in out:
                             norm = it.get("evidence_norm")
                             # legacy ssh uses host_ip field at top-level
+                            host_ip = it.get("host_ip") or f.src_ip
+                            if norm:
+                                route_norm_list(norm, host_ip, f.flow_id)
+                    except Exception:
+                        pass
+                if tls_extract:
+                    try:
+                        out = tls_extract(f) or []
+                        evidence["tls"].extend(out)
+                        for it in out:
+                            norm = it.get("evidence_norm")
                             host_ip = it.get("host_ip") or f.src_ip
                             if norm:
                                 route_norm_list(norm, host_ip, f.flow_id)

@@ -70,6 +70,7 @@ def _attrs_for_trait(trait: str) -> List[str]:
         "ntp:stratum:": ["ntp.stratum"],
         "ntp:ref_id:": ["ntp.ref_id"],
         "ntp:mode:": ["ntp.mode"],
+        "tls:ja3:": ["tls.ja3"],
     }
     for prefix, attrs in _MAP.items():
         if trait.startswith(prefix):
